@@ -70,14 +70,24 @@ export async function renderPage(url: string, timeoutMs = 25_000): Promise<Rende
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
     );
     await page.setExtraHTTPHeaders({ "Accept-Language": "ja,en;q=0.8" });
+    page.setDefaultNavigationTimeout(timeoutMs);
 
-    // 画像・フォント・メディアは読み込まない（高速化）
-    await page.setRequestInterception(true);
-    page.on("request", (req: any) => {
-      const t = req.resourceType();
-      if (t === "image" || t === "font" || t === "media") req.abort();
-      else req.continue();
-    });
+    // 画像・フォント・メディアは読み込まない（高速化）。
+    // リモートプロバイダによっては interception 非対応のことがあるため失敗しても続行。
+    try {
+      await page.setRequestInterception(true);
+      page.on("request", (req: any) => {
+        try {
+          const t = req.resourceType();
+          if (t === "image" || t === "font" || t === "media") req.abort();
+          else req.continue();
+        } catch {
+          // 既に処理済み等は無視
+        }
+      });
+    } catch {
+      // interception不可でも描画は可能
+    }
 
     // ページ自身が読むJSON応答を回収（物件データはここに入ることが多い）
     const jsonBodies: string[] = [];
@@ -95,7 +105,14 @@ export async function renderPage(url: string, timeoutMs = 25_000): Promise<Rende
       }
     });
 
-    await page.goto(url, { waitUntil: "networkidle2", timeout: timeoutMs });
+    // networkidle2待ちでタイムアウトしても、描画済みの内容で続行する
+    try {
+      await page.goto(url, { waitUntil: "networkidle2", timeout: timeoutMs });
+    } catch (e: any) {
+      if (!String(e?.message ?? e).includes("timeout") && !String(e?.name ?? "").includes("Timeout")) {
+        throw e;
+      }
+    }
     await new Promise((r) => setTimeout(r, 1500));
 
     const title = await page.title();
@@ -108,7 +125,11 @@ export async function renderPage(url: string, timeoutMs = 25_000): Promise<Rende
       via,
     };
   } finally {
-    if (via === "remote") await browser.disconnect();
-    else await browser.close();
+    try {
+      if (via === "remote") await browser.disconnect();
+      else await browser.close();
+    } catch {
+      // クローズ失敗は無視
+    }
   }
 }

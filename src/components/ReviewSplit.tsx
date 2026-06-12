@@ -140,6 +140,14 @@ export function ReviewSplit({
             result.notes.length > 0 && (
               <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-200 leading-relaxed whitespace-pre-wrap break-words">
                 ⚠ {result.notes.join("\n")}
+                {filledCount < 3 && (
+                  <button
+                    onClick={onCancel}
+                    className="mt-2 block w-full rounded-md bg-amber-500/90 hover:bg-amber-500 text-base-900 text-xs font-bold py-1.5"
+                  >
+                    📄 PDF/画像の取り込みに切り替える
+                  </button>
+                )}
               </div>
             )}
           {FIELD_ORDER.map((k) => {

@@ -112,6 +112,22 @@ npm test         # 計算エンジンのテスト
 
 `.env.local` に設定してください。
 
+### リモートブラウザの設定手順（URL取込をSPAサイト対応にする）
+VercelではローカルChromiumが共有ライブラリ不足（libnss3等）で起動できないため、
+JS描画が必要なサイト（reinn.jp等のSPA）には**リモートブラウザ**を使います。
+
+**Browserless（無料枠あり）の例:**
+1. https://www.browserless.io/ でアカウント作成 → ダッシュボードで API Token を取得
+2. Vercel の環境変数に以下を追加して再デプロイ:
+   ```
+   BROWSER_WS_ENDPOINT=wss://production-sfo.browserless.io?token=あなたのトークン
+   ```
+   （リージョンは sfo / lon / ams 等から近いものを選択可）
+3. URL取込を再実行。診断に `描画成功[remote]` と出れば有効化されています。
+
+Browserbase 等、puppeteer の `browserWSEndpoint` に対応する他サービスでも同様に設定できます。
+※ ログイン必須ページはリモートブラウザでも取得できません。その場合はページのPDF保存/スクショ→画像取込が確実です。
+
 ## ディレクトリ構成
 ```
 src/
