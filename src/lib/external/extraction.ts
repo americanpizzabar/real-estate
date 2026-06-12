@@ -70,7 +70,7 @@ export const EXTRACTION_SYSTEM =
   "「年間予定賃料」「満室時想定収入」等は annualRentIncome として認識します。出力は指定スキーマのJSONのみ。";
 
 /** 抽出指示の本文（画像/PDFいずれでも共通。withBox=true で画像のバウンディングボックスも要求）。 */
-export function extractionInstruction(withBox: boolean, pastedText?: string): string {
+export function extractionInstruction(withBox: boolean, pastedText?: string, maxChars = 8000): string {
   const base = `次のマイソクから物件情報を抽出し、以下の形のJSONを1つだけ出力してください。
 
 {
@@ -94,7 +94,7 @@ export function extractionInstruction(withBox: boolean, pastedText?: string): st
 - 利回りが無く満室想定年収と価格がある場合は grossYieldPct を計算して補完してよい。
 - evidence は抽出した各フィールドについて、読み取り元の文字列を必ず含める。${withBox ? "画像座標は左上原点・0-1000正規化で box に格納。" : ""}`;
   if (pastedText) {
-    return `${base}\n\n--- マイソク本文 ---\n${pastedText.slice(0, 8000)}`;
+    return `${base}\n\n--- マイソク本文（HTML/JSON断片を含む場合あり。物件データを読み取ること）---\n${pastedText.slice(0, maxChars)}`;
   }
   return base;
 }

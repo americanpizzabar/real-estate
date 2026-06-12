@@ -23,7 +23,7 @@ describe("urlIntake parseHtml", () => {
   it("タイトル・OG・説明・JSON-LD・本文を統合テキスト化", () => {
     expect(page.title).toContain("日本橋RM");
     expect(page.text).toContain("8000万円");
-    expect(page.text).toContain("JSON-LD");
+    expect(page.text).toContain("構造化データ");
     expect(page.text).toContain("東京都中央区日本橋");
     // scriptの中身は本文に含めない
     expect(page.text).not.toContain("var x = 1");
@@ -42,6 +42,23 @@ describe("urlIntake parseHtml", () => {
     expect(portals).toContain("楽待");
     // 自身(SUUMO)の別ページは除外
     expect(links.some((l) => l.url.includes("suumo.jp"))).toBe(false);
+  });
+});
+
+describe("urlIntake SPA(JSON)対応", () => {
+  const SPA_HTML = `<html><head><title>物件</title></head><body>
+  <div id="__next"></div>
+  <script id="__NEXT_DATA__" type="application/json">
+  {"props":{"pageProps":{"property":{"name":"渋谷RMマンション","address":"東京都渋谷区","price":150000000,"area":85.5,"yield":5.2}}}}
+  </script>
+  <script>window.__INITIAL_STATE__ = {"x":1};</script>
+  </body></html>`;
+
+  it("__NEXT_DATA__内のJSONを抽出テキストに含める", () => {
+    const page = parseHtml("https://marketplace.example.jp/property/305", SPA_HTML);
+    expect(page.text).toContain("渋谷RMマンション");
+    expect(page.text).toContain("150000000");
+    expect(page.text).toContain("構造化データ");
   });
 });
 

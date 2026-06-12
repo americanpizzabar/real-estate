@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   if (isGeminiConfigured()) {
     try {
       const raw = await geminiGenerate(EXTRACTION_SYSTEM, [
-        textPart(extractionInstruction(false, page.text)),
+        textPart(extractionInstruction(false, page.text, 18000)),
       ]);
       result = normalizeExtraction(raw);
       source = "gemini";
@@ -67,6 +67,15 @@ export async function POST(req: NextRequest) {
       evidence: [],
       notes: notes ?? [],
     };
+  }
+
+  // 何も抽出できなかった場合の案内（JS描画SPA等）
+  const extractedCount = Object.keys(result.fields ?? {}).length;
+  if (extractedCount === 0) {
+    result.notes = [
+      ...(result.notes ?? []),
+      "このページからは物件データを自動抽出できませんでした。JavaScriptで描画されるサイトや会員限定ページの可能性があります。PDF/画像のドラッグ&ドロップ、またはページ本文のテキスト貼付でお試しください。",
+    ];
   }
 
   // 3) 同一物件の他サイト掲載を横断探索
