@@ -76,20 +76,33 @@ export async function POST(req: NextRequest) {
   let title = "";
   let method: "static" | "rendered" = "static";
 
+  // 診断情報（0項目時にUIへ表示し、原因切り分けに使う）
+  const diag: Record<string, unknown> = {};
+
   try {
     const page = await fetchPage(url);
     title = page.title;
+    diag.staticTextLen = page.text.length;
+    diag.staticTitle = page.title?.slice(0, 60) || "";
     const r = await extract(page.text);
     result = r.result;
     source = r.source;
+    diag.staticRich = richness(result.fields);
   } catch (e: any) {
     staticFailed = String(e?.message ?? e);
+    diag.staticError = staticFailed.slice(0, 200);
   }
 
   // ---- 2) 主要データが取れていなければ ヘッドレスブラウザで描画 ----
   if (!result || richness(result.fields) < 2) {
+    diag.renderAttempted = true;
     try {
       const rendered = await renderPage(url);
+      diag.renderOk = true;
+      diag.renderTextLen = rendered.text.length;
+      diag.jsonBodies = rendered.jsonBodies.length;
+      diag.renderTitle = rendered.title?.slice(0, 60) || "";
+      diag.renderSample = rendered.text.slice(0, 200);
       const combined = [
         rendered.title && `タイトル: ${rendered.title}`,
         rendered.jsonBodies.length
@@ -111,11 +124,13 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (e: any) {
-      // レンダリング失敗は静的結果（あれば）で続行
+      diag.renderOk = false;
+      diag.renderError = String(e?.message ?? e).slice(0, 200);
       if (!result) {
         return NextResponse.json(
           {
             error: `ページの取得・描画に失敗しました: ${staticFailed ?? e?.message ?? e}（会員限定ページ・bot制限の可能性）`,
+            debug: diag,
           },
           { status: 502 }
         );
@@ -125,16 +140,22 @@ export async function POST(req: NextRequest) {
 
   if (!result) {
     return NextResponse.json(
-      { error: `ページ取得に失敗しました: ${staticFailed}（サイトの規約・bot制限の可能性）` },
+      { error: `ページ取得に失敗しました: ${staticFailed}（サイトの規約・bot制限の可能性）`, debug: diag },
       { status: 502 }
     );
   }
 
-  // 何も抽出できなかった場合の案内
+  // 何も抽出できなかった場合の案内（診断つき）
   if (Object.keys(result.fields ?? {}).length === 0) {
+    const d = diag;
+    const renderInfo = d.renderAttempted
+      ? d.renderOk
+        ? `描画成功(本文${d.renderTextLen}字・JSON${d.jsonBodies}件)`
+        : `描画失敗(${d.renderError})`
+      : "描画未実行";
     result.notes = [
-      ...(result.notes ?? []),
-      "このページからは物件データを自動抽出できませんでした。会員限定（要ログイン）ページの可能性があります。PDF/画像のドラッグ&ドロップ、またはページ本文のテキスト貼付でお試しください。",
+      "このページから物件データを自動抽出できませんでした。会員限定（要ログイン）やbot対策の可能性があります。確実なのはページのPDF保存/スクショ→画像取込です。",
+      `[診断] 静的取得${d.staticTextLen ?? "—"}字 / ${renderInfo}${d.renderSample ? ` / 冒頭:「${String(d.renderSample).slice(0, 80)}…」` : ""}`,
     ];
   }
 
@@ -144,6 +165,7 @@ export async function POST(req: NextRequest) {
     model: source === "gemini" ? GEMINI_MODEL : undefined,
     sourceUrl: url,
     title,
+    debug: diag,
     fields: result.fields,
     evidence: result.evidence,
     notes: result.notes,
