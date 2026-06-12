@@ -3,10 +3,13 @@ import { parseMaisoku } from "@/lib/external/maisokuParser";
 
 // =============================================================
 // POST /api/parse-maisoku  { text: string }
-// ANTHROPIC_API_KEY があれば Claude で構造化抽出、無ければ正規表現抽出。
+// GOOGLE_AI_API_KEY (Gemini) があれば LLM で構造化抽出、無ければ正規表現抽出。
 // =============================================================
 
 export const dynamic = "force-dynamic";
+
+// 使用モデル（環境変数で上書き可）。Google AI Studio の無料枠で利用可能な高速モデル。
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
 export async function POST(req: NextRequest) {
   const { text } = await req.json().catch(() => ({ text: "" }));
@@ -14,13 +17,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // GOOGLE_AI_API_KEY / GEMINI_API_KEY のどちらでも受け付ける
+  const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY;
   if (apiKey) {
     try {
-      const llm = await extractWithClaude(text, apiKey);
-      return NextResponse.json({ source: "llm", parsed: llm });
+      const llm = await extractWithGemini(text, apiKey);
+      return NextResponse.json({ source: "gemini", model: GEMINI_MODEL, parsed: llm });
     } catch (e) {
-      // フォールバック
+      // 失敗時は正規表現抽出にフォールバック
     }
   }
 
@@ -28,36 +32,43 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ source: "regex", parsed });
 }
 
-async function extractWithClaude(text: string, apiKey: string) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      system:
-        "あなたは不動産のマイソク（物件概要書）から投資判断用の項目を抽出するアシスタントです。出力は必ず指定のJSONのみ。",
-      messages: [
-        {
-          role: "user",
-          content: `次のマイソクテキストから、JSONで以下のキーを抽出してください。値が不明なキーは省略可。金額は円(number)、面積は㎡(number)、築年は西暦(number)、路線価は円/㎡(number)、利回りは%(number)。
-キー: name, address, price, landArea, buildingArea, structure(RC|SRC|S|LightS|W), builtYear, rosenkaPerSqm, koujiPerSqm, grossYieldPct
-JSONのみ出力。
+const SYSTEM_PROMPT =
+  "あなたは不動産のマイソク（物件概要書）から投資判断用の項目を抽出するアシスタントです。出力は必ず指定スキーマのJSONのみ。";
+
+const USER_PROMPT = (text: string) =>
+  `次のマイソクテキストから項目を抽出してください。値が不明なキーは省略可。金額は円(number)、面積は㎡(number)、築年は西暦(number)、路線価は円/㎡(number)、利回りは%(number)。
+キー: name, address, price, landArea, buildingArea, structure(RC|SRC|S|LightS|W のいずれか), builtYear, rosenkaPerSqm, koujiPerSqm, grossYieldPct
 
 ---
-${text.slice(0, 6000)}`,
-        },
-      ],
+${text.slice(0, 6000)}`;
+
+async function extractWithGemini(text: string, apiKey: string) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      // ヘッダー経由でキーを渡す（URLに載せないことで漏洩リスクを低減）
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text: USER_PROMPT(text) }] }],
+      generationConfig: {
+        temperature: 0,
+        // JSON出力を強制
+        responseMimeType: "application/json",
+      },
     }),
   });
-  if (!res.ok) throw new Error(`anthropic ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`gemini ${res.status} ${body.slice(0, 200)}`);
+  }
   const data = await res.json();
-  const content = data?.content?.[0]?.text ?? "{}";
+  const content: string =
+    data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
-  return { ...parsed, notes: ["Claudeで抽出"] };
+  return { ...parsed, notes: ["Gemini で抽出"] };
 }

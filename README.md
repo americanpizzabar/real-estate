@@ -49,7 +49,8 @@ npm test         # 計算エンジンのテスト
 | 変数 | 用途 |
 |------|------|
 | `REINFOLIB_API_KEY` | 国土交通省 不動産情報ライブラリ API。未設定時は周辺事例がデモデータになります。 |
-| `ANTHROPIC_API_KEY` | マイソクのAI抽出（Claude）。未設定時は正規表現ベース抽出にフォールバック。 |
+| `GOOGLE_AI_API_KEY` | マイソクのAI抽出（Google AI / Gemini）。`GEMINI_API_KEY` でも可。未設定時は正規表現ベース抽出にフォールバック。 |
+| `GEMINI_MODEL` | 使用するGeminiモデル（任意）。既定 `gemini-2.0-flash`。 |
 
 `.env.local` に設定してください。
 
@@ -59,7 +60,7 @@ src/
   app/
     page.tsx               メインダッシュボード（3タブ）
     api/market/            取引事例 → 市場統計・乖離率
-    api/parse-maisoku/     マイソク抽出（Claude or 正規表現）
+    api/parse-maisoku/     マイソク抽出（Gemini or 正規表現）
   components/               UI・チャート（Radar/Waterfall/Cashflow/Heatmap/...）
   lib/
     calc/                  計算エンジン（積算・ローン・収益・予測・スコア・ストレス）

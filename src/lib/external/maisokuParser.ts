@@ -3,7 +3,7 @@ import type { PropertyInput, StructureType } from "@/lib/calc/types";
 // =============================================================
 // マイソク（物件概要書）テキストからの項目抽出
 // LLM未接続でも動くよう、正規表現ベースのヒューリスティック抽出。
-// ANTHROPIC_API_KEY があれば parse-maisoku ルート側でLLM抽出に切替。
+// GOOGLE_AI_API_KEY があれば parse-maisoku ルート側で Gemini 抽出に切替。
 // =============================================================
 
 export interface ParsedMaisoku extends Partial<PropertyInput> {
