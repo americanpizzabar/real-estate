@@ -80,7 +80,6 @@ export default function Home() {
   const [state, setState] = React.useState<InputState>(initialState);
   const [tab, setTab] = React.useState<Tab>("asset");
   const [mode, setMode] = React.useState<IncomeMode>("rental");
-  const [parsing, setParsing] = React.useState(false);
   const [market, setMarket] = React.useState<{ stats: MarketStats; source: string } | null>(null);
   const [pref, setPref] = React.useState("13");
   const [loadingMarket, setLoadingMarket] = React.useState(false);
@@ -96,36 +95,6 @@ export default function Home() {
   }, []);
 
   const set = (patch: Partial<InputState>) => setState((s) => ({ ...s, ...patch }));
-
-  // ---- マイソク抽出 ----
-  async function onParse(text: string) {
-    setParsing(true);
-    try {
-      const res = await fetch("/api/parse-maisoku", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json();
-      const p = data.parsed ?? {};
-      setState((s) => {
-        const next = { ...s, property: { ...s.property } };
-        for (const k of ["name", "address", "price", "landArea", "buildingArea", "structure", "builtYear", "rosenkaPerSqm", "koujiPerSqm"] as const) {
-          if (p[k] != null) (next.property as any)[k] = p[k];
-        }
-        // 利回りから月額賃料を逆算（賃貸初期値）
-        if (p.grossYieldPct && next.property.price) {
-          const annual = (next.property.price * p.grossYieldPct) / 100;
-          next.rental = { ...next.rental, monthlyGrossRent: Math.round(annual / 12) };
-        }
-        return next;
-      });
-    } catch (e) {
-      alert("抽出に失敗しました。手入力で続行できます。");
-    } finally {
-      setParsing(false);
-    }
-  }
 
   // ---- 市場データ取得 ----
   async function loadMarket() {
@@ -411,7 +380,7 @@ export default function Home() {
           {/* 左: 入力 */}
           <aside className="col-span-12 lg:col-span-3 print:hidden">
             <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto pr-1">
-              <InputPanel state={state} set={set} onParse={onParse} parsing={parsing} />
+              <InputPanel state={state} set={set} mode={mode} setMode={setMode} onIntake={() => setIntakeOpen(true)} />
             </div>
           </aside>
 
@@ -496,24 +465,24 @@ function Header({
   return (
     <header className="sticky top-0 z-20 bg-base-900/95 backdrop-blur border-b border-base-600 print:static">
       <div className="max-w-[1600px] mx-auto px-4 py-2.5 flex items-center gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center text-accent font-bold">
             不
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="text-sm font-bold leading-none">不動産投資 一撃判定</h1>
-            <p className="text-[11px] text-slate-400 leading-none mt-0.5 truncate max-w-[240px]">
+            <p className="text-[11px] text-slate-400 leading-none mt-0.5 truncate max-w-[180px]">
               {propertyName}
             </p>
           </div>
         </div>
 
-        <nav className="flex gap-1 ml-2">
+        <nav className="flex gap-1 ml-1 overflow-x-auto no-scrollbar min-w-0">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 tab === t.key
                   ? "bg-accent text-white"
                   : "text-slate-400 hover:text-slate-200 hover:bg-base-700"
@@ -524,31 +493,32 @@ function Header({
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-3">
-          <button
-            onClick={onIntake}
-            className="px-3 py-1.5 rounded-md text-xs font-bold bg-accent hover:bg-accent/90 text-white print:hidden"
-          >
-            📥 物件取り込み
-          </button>
-          <div className="text-right">
-            <span className="text-[10px] text-slate-400 block leading-none">総合スコア</span>
-            <span className="tnum text-lg font-bold leading-none" style={{ color }}>
-              {score} <span className="text-sm">({grade})</span>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <div className="text-right mr-1">
+            <span className="text-[9px] text-slate-400 block leading-none">スコア</span>
+            <span className="tnum text-base font-bold leading-none" style={{ color }}>
+              {score}<span className="text-xs">({grade})</span>
             </span>
           </div>
           <button
             onClick={onSave}
-            className="px-3 py-1.5 rounded-md text-xs font-semibold bg-base-700 hover:bg-base-600 text-slate-200 border border-base-500 print:hidden"
-            title="現在の物件をカタログに保存/更新"
+            className="w-8 h-8 rounded-md text-sm bg-base-700 hover:bg-base-600 text-slate-200 border border-base-500 print:hidden"
+            title={saved ? "カタログを更新" : "カタログに保存"}
           >
-            {saved ? "💾 更新" : "💾 カタログ保存"}
+            💾
           </button>
           <button
             onClick={() => window.print()}
-            className="px-3 py-1.5 rounded-md text-xs font-semibold bg-base-700 hover:bg-base-600 text-slate-200 border border-base-500 print:hidden"
+            className="w-8 h-8 rounded-md text-sm bg-base-700 hover:bg-base-600 text-slate-200 border border-base-500 print:hidden"
+            title="レポートPDF出力（印刷）"
           >
-            📄 PDF出力
+            📄
+          </button>
+          <button
+            onClick={onIntake}
+            className="px-3 py-1.5 rounded-md text-xs font-bold bg-accent hover:bg-accent/90 text-white print:hidden whitespace-nowrap"
+          >
+            📥 取り込む
           </button>
         </div>
       </div>

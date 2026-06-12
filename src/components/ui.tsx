@@ -167,6 +167,73 @@ export function Toggle({
   );
 }
 
+/** 折りたたみ可能なセクション（アコーディオン）。 */
+export function Section({
+  title,
+  defaultOpen = true,
+  right,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div className="card overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-base-700/40 transition-colors"
+      >
+        <span className="card-title">{title}</span>
+        <span className="flex items-center gap-2">
+          {right}
+          <svg
+            className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}
+            viewBox="0 0 12 12"
+            fill="none"
+          >
+            <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      {open && <div className="px-3.5 pb-3.5 pt-0.5">{children}</div>}
+    </div>
+  );
+}
+
+/** セグメント切替（タブ風トグル）。 */
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  size = "md",
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  size?: "sm" | "md";
+}) {
+  return (
+    <div className="inline-flex bg-base-900 border border-base-600 rounded-lg p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`rounded-md font-semibold transition-colors ${
+            size === "sm" ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-xs"
+          } ${value === o.value ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Bar({ value, max, color }: { value: number; max: number; color: string }) {
   const w = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
   return (
