@@ -33,6 +33,7 @@ import type { IncomeMode, PropertyInput, RentalParams } from "@/lib/calc/types";
 import { yen, pct, signedPct, man } from "@/lib/format";
 import { IntakeModal } from "@/components/IntakeModal";
 import { Catalog } from "@/components/Catalog";
+import { ReportDocument, type ReportData } from "@/components/ReportDocument";
 import type { ExtractedFields } from "@/lib/external/extraction";
 import type { Enrichment } from "@/lib/external/enrichment";
 import {
@@ -347,8 +348,27 @@ export default function Home() {
     setCurrentItemId(id);
   }
 
+  const reportData: ReportData = {
+    property: state.property,
+    mode,
+    cost,
+    stance,
+    score,
+    metrics: proj.metrics,
+    rows: proj.rows,
+    initialCosts,
+    dscrLabel: dscrJudge.label,
+    market,
+    deviation,
+    enrichment,
+    extras,
+  };
+
   return (
     <div className="min-h-screen">
+      {/* 印刷時はダッシュボードを隠し、帳票のみ出力 */}
+      <ReportDocument data={reportData} className="hidden print:block" />
+      <div className="print:hidden">
       <Header
         score={score.total}
         grade={score.grade}
@@ -449,6 +469,7 @@ export default function Home() {
         ※ 本ツールの算出値は簡易シミュレーションです。実際の投資判断・融資審査は専門家にご確認ください。
         外部API（不動産情報ライブラリ）未設定時はデモデータで動作します。
       </footer>
+      </div>
     </div>
   );
 }

@@ -75,8 +75,13 @@
 - **Mailgun Routes** / **Cloudflare Email Workers** でも同様に Webhook 連携可能。
 本番では送信元署名検証（SendGrid公開鍵 / Mailgun HMAC）の追加を推奨（ルート内にTODOコメントあり）。
 
-### レポートPDF出力
-ヘッダーの「レポートPDF出力」でブラウザ印刷（白背景レイアウト）→ 銀行・投資委員会提出用PDF化。
+### レポートPDF出力（銀行・投資委員会提出用）
+ヘッダーの「📄」ボタンで、ダッシュボードとは別の**専用A4帳票**を生成しブラウザ印刷→PDF化。
+- 表紙（物件名・所在地・総合スコア/グレード・作成日）、物件概要、資産評価（積算・土地値比率）、
+  収益サマリ（NOI/DSCR/IRR/NPV/回収年/デッドクロス）、キャッシュフロー推移表、周辺相場乖離、
+  ハザード・公的データ、免責を1ドキュメントに整形。
+- 印刷時はダッシュボードを隠し帳票のみ出力（`hidden print:block` / `print:hidden`）。
+- サーバーレスでのheadless Chromiumや日本語フォント埋め込みを回避し、確実・軽量に高品質PDFを実現。
 
 ## 技術スタック
 - **フロント**: Next.js 14 (App Router) / React 18 / TypeScript / Tailwind CSS
