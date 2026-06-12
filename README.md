@@ -106,6 +106,7 @@ npm test         # 計算エンジンのテスト
 | `REINFOLIB_API_KEY` | 国土交通省 不動産情報ライブラリ API。周辺成約事例（市場乖離）＋**用途地域・建蔽率・容積率・公示地価の自動取得**に使用。未設定時はデモ／未取得表示。 |
 | `TURSO_DATABASE_URL` | 物件カタログの永続化（Turso / libSQL）。未設定時はブラウザの localStorage に自動フォールバック。 |
 | `TURSO_AUTH_TOKEN` | Turso のアクセストークン（リモートDB利用時）。 |
+| `BROWSER_WS_ENDPOINT` | （任意）SPA物件ページのJS描画に使うリモートブラウザのWebSocket URL（例: Browserless `wss://...?token=XXX`）。Vercel等でローカルChromiumが起動できない場合の確実な経路。未設定時は @sparticuz/chromium を試行。 |
 | `GOOGLE_AI_API_KEY` | マイソクのAI抽出 ＆ **PDF/画像のファイル取込（マルチモーダル）**（Google AI / Gemini）。`GEMINI_API_KEY` でも可。テキスト貼付は未設定時も正規表現抽出で動作（ファイル取込は要キー）。 |
 | `GEMINI_MODEL` | 使用するGeminiモデル（任意）。既定 `gemini-2.0-flash`。 |
 

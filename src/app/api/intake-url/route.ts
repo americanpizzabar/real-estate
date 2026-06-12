@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
     try {
       const rendered = await renderPage(url);
       diag.renderOk = true;
+      diag.renderVia = rendered.via;
       diag.renderTextLen = rendered.text.length;
       diag.jsonBodies = rendered.jsonBodies.length;
       diag.renderTitle = rendered.title?.slice(0, 60) || "";
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest) {
     const d = diag;
     const renderInfo = d.renderAttempted
       ? d.renderOk
-        ? `描画成功(本文${d.renderTextLen}字・JSON${d.jsonBodies}件)`
+        ? `描画成功[${d.renderVia}](本文${d.renderTextLen}字・JSON${d.jsonBodies}件)`
         : `描画失敗(${d.renderError})`
       : "描画未実行";
     const gotKeys = Object.keys(result.fields ?? {});

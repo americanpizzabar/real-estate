@@ -3,9 +3,12 @@
 // 静的HTMLに物件データが無いサイト（JS描画・XHR読込）向けに、
 // 実ブラウザでページを開き、描画後テキストと XHR の JSON 応答を回収する。
 //
-// - Vercel: @sparticuz/chromium のサーバーレス用バイナリを使用
-// - ローカル: CHROME_PATH 環境変数 or 一般的なChromeパスを探索
-// - ページ自身が行う通信のみ（追加のクロールはしない）
+// レンダリング経路（優先順）:
+//  1. リモートブラウザ: BROWSER_WS_ENDPOINT（Browserless等のWebSocket）
+//     → サーバーレスの共有ライブラリ問題(libnss3等)を完全回避。最も確実。
+//  2. ローカル/サーバーレス: @sparticuz/chromium（環境により不可の場合あり）
+//
+// ※ ページ自身が行う通信のみ（追加のクロールはしない）
 // =============================================================
 
 export interface RenderedPage {
@@ -14,6 +17,8 @@ export interface RenderedPage {
   text: string;
   /** ページが取得した JSON レスポンス（候補） */
   jsonBodies: string[];
+  /** 使用した描画経路 */
+  via: "remote" | "local";
 }
 
 const LOCAL_CHROME_PATHS = [
@@ -25,12 +30,10 @@ const LOCAL_CHROME_PATHS = [
 ];
 
 async function resolveExecutablePath(): Promise<string> {
-  // サーバーレス（Vercel/AWS）では @sparticuz/chromium を使用
   const chromium = (await import("@sparticuz/chromium")).default;
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     return chromium.executablePath();
   }
-  // ローカル: システムChromeを探索、無ければ sparticuz を試す
   const fs = await import("fs");
   for (const p of LOCAL_CHROME_PATHS) {
     if (p && fs.existsSync(p)) return p;
@@ -40,15 +43,26 @@ async function resolveExecutablePath(): Promise<string> {
 
 export async function renderPage(url: string, timeoutMs = 25_000): Promise<RenderedPage> {
   const puppeteer = await import("puppeteer-core");
-  const chromium = (await import("@sparticuz/chromium")).default;
+  const wsEndpoint = process.env.BROWSER_WS_ENDPOINT;
 
-  const executablePath = await resolveExecutablePath();
-  const browser = await puppeteer.launch({
-    args: [...chromium.args, "--lang=ja"],
-    executablePath,
-    headless: true,
-    defaultViewport: { width: 1280, height: 1600 },
-  });
+  let browser: any;
+  let via: "remote" | "local";
+
+  if (wsEndpoint) {
+    // リモートブラウザに接続（Browserless / Browserbase / 自前など）
+    browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+    via = "remote";
+  } else {
+    const chromium = (await import("@sparticuz/chromium")).default;
+    const executablePath = await resolveExecutablePath();
+    browser = await puppeteer.launch({
+      args: [...chromium.args, "--lang=ja"],
+      executablePath,
+      headless: true,
+      defaultViewport: { width: 1280, height: 1600 },
+    });
+    via = "local";
+  }
 
   try {
     const page = await browser.newPage();
@@ -59,7 +73,7 @@ export async function renderPage(url: string, timeoutMs = 25_000): Promise<Rende
 
     // 画像・フォント・メディアは読み込まない（高速化）
     await page.setRequestInterception(true);
-    page.on("request", (req) => {
+    page.on("request", (req: any) => {
       const t = req.resourceType();
       if (t === "image" || t === "font" || t === "media") req.abort();
       else req.continue();
@@ -67,9 +81,9 @@ export async function renderPage(url: string, timeoutMs = 25_000): Promise<Rende
 
     // ページ自身が読むJSON応答を回収（物件データはここに入ることが多い）
     const jsonBodies: string[] = [];
-    page.on("response", async (res) => {
+    page.on("response", async (res: any) => {
       try {
-        if (jsonBodies.length >= 10) return;
+        if (jsonBodies.length >= 12) return;
         const ct = res.headers()["content-type"] || "";
         if (!ct.includes("application/json")) return;
         const body = await res.text();
@@ -82,18 +96,19 @@ export async function renderPage(url: string, timeoutMs = 25_000): Promise<Rende
     });
 
     await page.goto(url, { waitUntil: "networkidle2", timeout: timeoutMs });
-    // 描画完了の猶予（クライアントレンダリング分）
     await new Promise((r) => setTimeout(r, 1500));
 
     const title = await page.title();
-    const text = await page.evaluate(() => document.body?.innerText ?? "");
+    const text: string = await page.evaluate(() => (document as any).body?.innerText ?? "");
 
     return {
       title,
       text: text.replace(/\s+/g, " ").trim().slice(0, 8000),
       jsonBodies,
+      via,
     };
   } finally {
-    await browser.close();
+    if (via === "remote") await browser.disconnect();
+    else await browser.close();
   }
 }
