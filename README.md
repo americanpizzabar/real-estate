@@ -28,6 +28,27 @@
 ### ③ 賃貸 × 民泊 比較タブ
 同一物件を「賃貸で回した場合」と「民泊で回した場合」で全指標を左右比較し、勝ち筋を自動判定。
 
+### ④ 物件取り込み（インテーク）＆ カタログ
+プロの行動動線に合わせた「送るだけ・置くだけ」の取り込み機能。
+- **PDF/画像のドラッグ&ドロップ**: ブラウザに置くだけで Gemini マルチモーダルが直接構造化（OCR不要）。
+- **スマホカメラ即時スキャン**: 現地で紙の概要書を撮影 → その場でテキスト化・項目抽出。
+- **テキスト貼付**: APIキー無しでも正規表現抽出で動作。
+- **表記揺れの正規化**: 「RC 3F」「鉄筋コンクリート造3階建」→ 構造=RC・階数=3 に自動変換。
+  「満室時想定収入」等から利回り・家賃を補完。
+- **2画面スプリット確認UI**: 左に元マイソク、右に抽出フォーム。フィールドにフォーカスすると
+  画像内の読み取り箇所が青枠でハイライト（画像はバウンディングボックス連動）。クリックで一瞬修正。
+- **自動カタログ（名寄せ）**: 取り込んだ物件に特徴タグ（「駅徒歩5分以内」「土地値比率70%以上」
+  「民泊ポテンシャル高」等）を自動付与。検討中／打診中／見送り／購入済みのステータス管理・絞り込み。
+  ※ 現状は localStorage 永続化（Supabase等のDBへ差し替え可能な薄いCRUDで分離）。
+
+### メール転送取り込み（要設定）
+専用アドレス宛の転送でマイソク添付を自動解析する Webhook を `POST /api/inbound-email` に用意。
+メール受信は外部サービスが必要です（いずれか）:
+- **SendGrid Inbound Parse**: ドメインのMXを設定し、`upload-<user>@<your-domain>` の転送先(Webhook)を
+  `https://<your-app>/api/inbound-email` に指定。
+- **Mailgun Routes** / **Cloudflare Email Workers** でも同様に Webhook 連携可能。
+本番では送信元署名検証（SendGrid公開鍵 / Mailgun HMAC）の追加を推奨（ルート内にTODOコメントあり）。
+
 ### レポートPDF出力
 ヘッダーの「レポートPDF出力」でブラウザ印刷（白背景レイアウト）→ 銀行・投資委員会提出用PDF化。
 
@@ -49,7 +70,7 @@ npm test         # 計算エンジンのテスト
 | 変数 | 用途 |
 |------|------|
 | `REINFOLIB_API_KEY` | 国土交通省 不動産情報ライブラリ API。未設定時は周辺事例がデモデータになります。 |
-| `GOOGLE_AI_API_KEY` | マイソクのAI抽出（Google AI / Gemini）。`GEMINI_API_KEY` でも可。未設定時は正規表現ベース抽出にフォールバック。 |
+| `GOOGLE_AI_API_KEY` | マイソクのAI抽出 ＆ **PDF/画像のファイル取込（マルチモーダル）**（Google AI / Gemini）。`GEMINI_API_KEY` でも可。テキスト貼付は未設定時も正規表現抽出で動作（ファイル取込は要キー）。 |
 | `GEMINI_MODEL` | 使用するGeminiモデル（任意）。既定 `gemini-2.0-flash`。 |
 
 `.env.local` に設定してください。
@@ -58,13 +79,16 @@ npm test         # 計算エンジンのテスト
 ```
 src/
   app/
-    page.tsx               メインダッシュボード（3タブ）
+    page.tsx               メインダッシュボード（4タブ＋取り込みモーダル）
     api/market/            取引事例 → 市場統計・乖離率
-    api/parse-maisoku/     マイソク抽出（Gemini or 正規表現）
-  components/               UI・チャート（Radar/Waterfall/Cashflow/Heatmap/...）
+    api/parse-maisoku/     マイソク抽出・テキスト（Gemini or 正規表現）
+    api/intake/            マイソク抽出・PDF/画像（Gemini マルチモーダル）
+    api/inbound-email/     メール転送取り込みWebhook（要メール受信基盤）
+  components/               UI・チャート・取り込み（IntakeModal/ReviewSplit/Catalog/...）
   lib/
     calc/                  計算エンジン（積算・ローン・収益・予測・スコア・ストレス）
-    external/              外部データ連携・マーケット分析・マイソク抽出
+    catalog.ts             物件カタログ（localStorage CRUD・自動タグ付け）
+    external/              外部連携・マーケット分析・抽出スキーマ・Geminiクライアント
 ```
 
 ## 今後の拡張余地

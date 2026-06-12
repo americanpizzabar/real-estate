@@ -28,12 +28,26 @@ import { runStressTest, buildSensitivityMatrix } from "@/lib/calc/stress";
 import { annualDebtService } from "@/lib/calc/loan";
 import { computeScore } from "@/lib/calc/scoring";
 import { calcDeviation, type MarketStats } from "@/lib/external/marketAnalysis";
-import type { IncomeMode } from "@/lib/calc/types";
+import type { IncomeMode, PropertyInput, RentalParams } from "@/lib/calc/types";
 import { yen, pct, signedPct, man } from "@/lib/format";
+import { IntakeModal } from "@/components/IntakeModal";
+import { Catalog } from "@/components/Catalog";
+import type { ExtractedFields } from "@/lib/external/extraction";
+import {
+  loadCatalog,
+  upsertItem,
+  updateItem,
+  deleteItem,
+  newId,
+  generateTags,
+  type CatalogItem,
+  type CatalogExtras,
+  type PropertyStatus,
+} from "@/lib/catalog";
 
 const CURRENT_YEAR = 2026;
 
-type Tab = "asset" | "income" | "compare";
+type Tab = "asset" | "income" | "compare" | "catalog";
 
 const initialState: InputState = {
   property: SAMPLE_PROPERTY,
@@ -55,6 +69,14 @@ export default function Home() {
   const [market, setMarket] = React.useState<{ stats: MarketStats; source: string } | null>(null);
   const [pref, setPref] = React.useState("13");
   const [loadingMarket, setLoadingMarket] = React.useState(false);
+  const [intakeOpen, setIntakeOpen] = React.useState(false);
+  const [catalog, setCatalog] = React.useState<CatalogItem[]>([]);
+  const [currentItemId, setCurrentItemId] = React.useState<string | null>(null);
+  const [extras, setExtras] = React.useState<CatalogExtras>({});
+
+  React.useEffect(() => {
+    setCatalog(loadCatalog());
+  }, []);
 
   const set = (patch: Partial<InputState>) => setState((s) => ({ ...s, ...patch }));
 
@@ -115,14 +137,19 @@ export default function Home() {
   const taxRate = state.taxRatePct / 100;
 
   const buildProjFor = React.useCallback(
-    (m: IncomeMode): ProjectionInput => {
-      const initial = calcInitialCosts(state.property, m, {
+    (
+      m: IncomeMode,
+      ov?: { property?: PropertyInput; rental?: RentalParams }
+    ): ProjectionInput => {
+      const property = ov?.property ?? state.property;
+      const rental = ov?.rental ?? state.rental;
+      const initial = calcInitialCosts(property, m, {
         loanAmount: state.loan.amount,
       });
       return {
-        property: state.property,
+        property,
         mode: m,
-        rental: state.rental,
+        rental,
         minpaku: state.minpaku,
         loan: state.loan,
         downPayment: state.downPayment,
@@ -179,6 +206,106 @@ export default function Home() {
 
   const stress = React.useMemo(() => runStressTest(buildProjFor(mode)), [buildProjFor, mode]);
 
+  // ---- 抽出結果をフォーム＋カタログへ適用 ----
+  function applyExtracted(f: ExtractedFields, sourceName?: string) {
+    const np: PropertyInput = { ...state.property };
+    if (f.name) np.name = f.name;
+    if (f.address) np.address = f.address;
+    if (f.price) np.price = f.price;
+    if (f.landArea) np.landArea = f.landArea;
+    if (f.buildingArea) np.buildingArea = f.buildingArea;
+    if (f.structure) np.structure = f.structure;
+    if (f.builtYear) np.builtYear = f.builtYear;
+    if (f.rosenkaPerSqm) np.rosenkaPerSqm = f.rosenkaPerSqm;
+    if (f.koujiPerSqm) np.koujiPerSqm = f.koujiPerSqm;
+
+    // 賃料: 満室想定年収 > 利回り逆算 の順で反映
+    let newRental = state.rental;
+    if (f.annualRentIncome && f.annualRentIncome > 0) {
+      newRental = { ...state.rental, monthlyGrossRent: Math.round(f.annualRentIncome / 12) };
+    } else if (f.grossYieldPct && np.price) {
+      newRental = { ...state.rental, monthlyGrossRent: Math.round((np.price * f.grossYieldPct) / 100 / 12) };
+    }
+
+    const newExtras: CatalogExtras = {
+      floors: f.floors,
+      grossYieldPct: f.grossYieldPct,
+      annualRentIncome: f.annualRentIncome,
+      nearestStation: f.nearestStation,
+      stationWalkMin: f.stationWalkMin,
+      landRightType: f.landRightType,
+      zoningUse: f.zoningUse,
+      buildingCoveragePct: f.buildingCoveragePct,
+      floorAreaRatioPct: f.floorAreaRatioPct,
+    };
+
+    // スナップショット（カタログ表示用）を新state値から直接計算
+    const snapCost = calcCostApproach(np, CURRENT_YEAR, state.shape);
+    const snapProj = buildProjection(buildProjFor("rental", { property: np, rental: newRental }));
+    const snapScore = computeScore(snapCost, snapProj.metrics, null);
+    const snapshot = {
+      landValueRatio: snapCost.landValueRatio,
+      grossYieldPct: snapProj.metrics.grossYieldPct,
+      score: snapScore.total,
+      grade: snapScore.grade,
+    };
+
+    const id = newId();
+    const item: CatalogItem = {
+      id,
+      createdAt: Date.now(),
+      status: "reviewing",
+      property: np,
+      extras: newExtras,
+      tags: generateTags(np, newExtras, snapshot),
+      sourceName,
+      snapshot,
+    };
+    setCatalog(upsertItem(item));
+    setCurrentItemId(id);
+    setExtras(newExtras);
+    setState((s) => ({ ...s, property: np, rental: newRental }));
+    setTab("asset");
+  }
+
+  // ---- カタログ操作 ----
+  function loadFromCatalog(item: CatalogItem) {
+    setState((s) => ({ ...s, property: item.property }));
+    setExtras(item.extras);
+    setCurrentItemId(item.id);
+    setTab("asset");
+  }
+  function changeStatus(id: string, status: PropertyStatus) {
+    setCatalog(updateItem(id, { status }));
+  }
+  function removeItem(id: string) {
+    setCatalog(deleteItem(id));
+    if (currentItemId === id) setCurrentItemId(null);
+  }
+  // 現在の物件をカタログへ保存/更新
+  function saveCurrent() {
+    const snapshot = {
+      landValueRatio: cost.landValueRatio,
+      grossYieldPct: proj.metrics.grossYieldPct,
+      score: score.total,
+      grade: score.grade,
+    };
+    const existing = currentItemId ? catalog.find((c) => c.id === currentItemId) : null;
+    const id = existing?.id ?? newId();
+    const item: CatalogItem = {
+      id,
+      createdAt: existing?.createdAt ?? Date.now(),
+      status: existing?.status ?? "reviewing",
+      property: state.property,
+      extras,
+      tags: generateTags(state.property, extras, snapshot),
+      sourceName: existing?.sourceName,
+      snapshot,
+    };
+    setCatalog(upsertItem(item));
+    setCurrentItemId(id);
+  }
+
   return (
     <div className="min-h-screen">
       <Header
@@ -187,52 +314,70 @@ export default function Home() {
         propertyName={state.property.name}
         tab={tab}
         setTab={setTab}
+        catalogCount={catalog.length}
+        onIntake={() => setIntakeOpen(true)}
+        onSave={saveCurrent}
+        saved={!!currentItemId}
       />
 
-      <div className="max-w-[1600px] mx-auto px-4 py-4 grid grid-cols-12 gap-4">
-        {/* 左: 入力 */}
-        <aside className="col-span-12 lg:col-span-3 print:hidden">
-          <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto pr-1">
-            <InputPanel state={state} set={set} onParse={onParse} parsing={parsing} />
-          </div>
-        </aside>
+      <IntakeModal open={intakeOpen} onClose={() => setIntakeOpen(false)} onApply={applyExtracted} />
 
-        {/* 右: コンテンツ */}
-        <main className="col-span-12 lg:col-span-9 space-y-4">
-          {tab === "asset" && (
-            <AssetTab
-              cost={cost}
-              stance={stance}
-              score={score}
-              property={state.property}
-              market={market}
-              deviation={deviation}
-              pref={pref}
-              setPref={setPref}
-              loadMarket={loadMarket}
-              loadingMarket={loadingMarket}
-            />
-          )}
+      {tab === "catalog" ? (
+        <div className="max-w-[1600px] mx-auto px-4 py-4">
+          <Catalog
+            items={catalog}
+            onLoad={loadFromCatalog}
+            onChangeStatus={changeStatus}
+            onDelete={removeItem}
+            onNewIntake={() => setIntakeOpen(true)}
+          />
+        </div>
+      ) : (
+        <div className="max-w-[1600px] mx-auto px-4 py-4 grid grid-cols-12 gap-4">
+          {/* 左: 入力 */}
+          <aside className="col-span-12 lg:col-span-3 print:hidden">
+            <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto pr-1">
+              <InputPanel state={state} set={set} onParse={onParse} parsing={parsing} />
+            </div>
+          </aside>
 
-          {tab === "income" && (
-            <IncomeTab
-              mode={mode}
-              setMode={setMode}
-              proj={proj}
-              dscrJudge={dscrJudge}
-              waterfall={waterfall}
-              sensitivity={sensitivity}
-              stress={stress}
-              initialCosts={initialCosts}
-              property={state.property}
-            />
-          )}
+          {/* 右: コンテンツ */}
+          <main className="col-span-12 lg:col-span-9 space-y-4">
+            {tab === "asset" && (
+              <AssetTab
+                cost={cost}
+                stance={stance}
+                score={score}
+                property={state.property}
+                market={market}
+                deviation={deviation}
+                pref={pref}
+                setPref={setPref}
+                loadMarket={loadMarket}
+                loadingMarket={loadingMarket}
+              />
+            )}
 
-          {tab === "compare" && (
-            <CompareTab rental={rentalProj} minpaku={minpakuProj} property={state.property} />
-          )}
-        </main>
-      </div>
+            {tab === "income" && (
+              <IncomeTab
+                mode={mode}
+                setMode={setMode}
+                proj={proj}
+                dscrJudge={dscrJudge}
+                waterfall={waterfall}
+                sensitivity={sensitivity}
+                stress={stress}
+                initialCosts={initialCosts}
+                property={state.property}
+              />
+            )}
+
+            {tab === "compare" && (
+              <CompareTab rental={rentalProj} minpaku={minpakuProj} property={state.property} />
+            )}
+          </main>
+        </div>
+      )}
       <footer className="max-w-[1600px] mx-auto px-4 py-6 text-[11px] text-slate-600 print:hidden">
         ※ 本ツールの算出値は簡易シミュレーションです。実際の投資判断・融資審査は専門家にご確認ください。
         外部API（不動産情報ライブラリ）未設定時はデモデータで動作します。
@@ -248,17 +393,26 @@ function Header({
   propertyName,
   tab,
   setTab,
+  catalogCount,
+  onIntake,
+  onSave,
+  saved,
 }: {
   score: number;
   grade: string;
   propertyName: string;
   tab: Tab;
   setTab: (t: Tab) => void;
+  catalogCount: number;
+  onIntake: () => void;
+  onSave: () => void;
+  saved: boolean;
 }) {
   const tabs: { key: Tab; label: string }[] = [
     { key: "asset", label: "① 資産価値・物件判定" },
     { key: "income", label: "② 収益シミュレーション" },
     { key: "compare", label: "③ 賃貸×民泊 比較" },
+    { key: "catalog", label: `④ 物件カタログ${catalogCount ? ` (${catalogCount})` : ""}` },
   ];
   const color = grade === "S" || grade === "A" ? "#2dd4a7" : grade === "B" ? "#f5b14c" : "#f56c6c";
   return (
@@ -293,6 +447,12 @@ function Header({
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={onIntake}
+            className="px-3 py-1.5 rounded-md text-xs font-bold bg-accent hover:bg-accent/90 text-white print:hidden"
+          >
+            📥 物件取り込み
+          </button>
           <div className="text-right">
             <span className="text-[10px] text-slate-400 block leading-none">総合スコア</span>
             <span className="tnum text-lg font-bold leading-none" style={{ color }}>
@@ -300,10 +460,17 @@ function Header({
             </span>
           </div>
           <button
+            onClick={onSave}
+            className="px-3 py-1.5 rounded-md text-xs font-semibold bg-base-700 hover:bg-base-600 text-slate-200 border border-base-500 print:hidden"
+            title="現在の物件をカタログに保存/更新"
+          >
+            {saved ? "💾 更新" : "💾 カタログ保存"}
+          </button>
+          <button
             onClick={() => window.print()}
             className="px-3 py-1.5 rounded-md text-xs font-semibold bg-base-700 hover:bg-base-600 text-slate-200 border border-base-500 print:hidden"
           >
-            📄 レポートPDF出力
+            📄 PDF出力
           </button>
         </div>
       </div>
