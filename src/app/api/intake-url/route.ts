@@ -145,16 +145,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 何も抽出できなかった場合の案内（診断つき）
-  if (Object.keys(result.fields ?? {}).length === 0) {
+  // 主要データがほとんど取れていない場合の案内（診断つき）
+  // ※ structure等が1つだけ取れて「0項目でない」ケースも拾う
+  if (richness(result.fields) < 2) {
     const d = diag;
     const renderInfo = d.renderAttempted
       ? d.renderOk
         ? `描画成功(本文${d.renderTextLen}字・JSON${d.jsonBodies}件)`
         : `描画失敗(${d.renderError})`
       : "描画未実行";
+    const gotKeys = Object.keys(result.fields ?? {});
     result.notes = [
-      "このページから物件データを自動抽出できませんでした。会員限定（要ログイン）やbot対策の可能性があります。確実なのはページのPDF保存/スクショ→画像取込です。",
+      gotKeys.length
+        ? `物件データを十分に取得できませんでした（取得できた項目: ${gotKeys.join(", ")}）。会員限定/bot対策の可能性があります。確実なのはページのPDF保存/スクショ→画像取込です。`
+        : "このページから物件データを自動抽出できませんでした。会員限定（要ログイン）やbot対策の可能性があります。確実なのはページのPDF保存/スクショ→画像取込です。",
       `[診断] 静的取得${d.staticTextLen ?? "—"}字 / ${renderInfo}${d.renderSample ? ` / 冒頭:「${String(d.renderSample).slice(0, 80)}…」` : ""}`,
     ];
   }

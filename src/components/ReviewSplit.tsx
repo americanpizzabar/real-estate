@@ -136,11 +136,12 @@ export function ReviewSplit({
           )}
         </div>
         <div className="flex-1 overflow-auto p-3 space-y-2">
-          {filledCount === 0 && result.notes.length > 0 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-200 leading-relaxed">
-              ⚠ {result.notes.join(" ")}
-            </div>
-          )}
+          {(filledCount < 3 || result.notes.some((n) => n.includes("[診断]"))) &&
+            result.notes.length > 0 && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-200 leading-relaxed whitespace-pre-wrap break-words">
+                ⚠ {result.notes.join("\n")}
+              </div>
+            )}
           {FIELD_ORDER.map((k) => {
             const ev = evidenceMap.get(k);
             const val = fields[k];
