@@ -109,6 +109,21 @@ export async function fetchLandUse(lat: number, lon: number): Promise<LandUseInf
   }
 }
 
+/**
+ * 用途地域の生GeoJSON（FeatureCollection）を取得（地図オーバーレイ用）。
+ * 失敗・未設定時は null。
+ */
+export async function fetchLandUseGeoJson(lat: number, lon: number, z = 15): Promise<any | null> {
+  try {
+    const { x, y } = latLonToTilePixel(lat, lon, z);
+    const gj = await fetchGeoJson("/XKT002", z, x, y);
+    if (!gj || !Array.isArray(gj.features)) return null;
+    return gj;
+  } catch {
+    return null;
+  }
+}
+
 export interface LandPriceInfo {
   koujiPerSqm?: number; // 公示地価（円/㎡）
   pointName?: string; // 最寄基準点

@@ -669,9 +669,28 @@ function MapTab({
             <div className="rounded-lg overflow-hidden border border-base-600" style={{ height: 520 }}>
               <PropertyMap lat={lat} lon={lon} label={property.name || property.address} />
             </div>
-            <div className="flex flex-wrap items-center gap-3 mt-3">
+            {/* 用途地域の凡例 */}
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <span className="text-[11px] text-slate-400 mr-1">用途地域:</span>
+              {[
+                ["低層住居専用", "#3fa36b"],
+                ["中高層住居専用", "#a8e0a0"],
+                ["住居", "#f2e15c"],
+                ["近隣商業", "#ffb3a0"],
+                ["商業", "#ef8fc0"],
+                ["準工業", "#c0a0d8"],
+                ["工業", "#a8c4e8"],
+              ].map(([label, color]) => (
+                <span key={label} className="inline-flex items-center gap-1 text-[10px] text-slate-300">
+                  <span className="w-3 h-3 rounded-sm inline-block" style={{ background: color as string, opacity: 0.7 }} />
+                  {label}
+                </span>
+              ))}
+              <span className="text-[10px] text-slate-500">（要 不動産情報ライブラリAPIキー）</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 mt-2">
               <span className="text-[11px] text-slate-400">
-                右上のレイヤー操作で、洪水・津波・土砂・高潮の重畳を切替できます。
+                右上のレイヤー操作で、洪水・津波・土砂・高潮・用途地域の重畳を切替できます。
               </span>
               <div className="flex flex-wrap gap-2 ml-auto print:hidden">
                 {extLinks(lat, lon).map((l) => (
