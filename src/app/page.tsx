@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import dynamic from "next/dynamic";
 import { InputPanel, type InputState } from "@/components/InputPanel";
 import { Card, Metric, Bar } from "@/components/ui";
 import { ScoreRadar } from "@/components/ScoreRadar";
@@ -51,7 +52,17 @@ import {
 
 const CURRENT_YEAR = 2026;
 
-type Tab = "asset" | "income" | "compare" | "catalog";
+// Leafletはwindow依存のためSSR無効でクライアント読み込み
+const PropertyMap = dynamic(() => import("@/components/PropertyMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[480px] flex items-center justify-center text-slate-400 text-sm">
+      地図を読み込み中…
+    </div>
+  ),
+});
+
+type Tab = "asset" | "income" | "compare" | "catalog" | "map";
 
 const initialState: InputState = {
   property: SAMPLE_PROPERTY,
@@ -385,6 +396,16 @@ export default function Home() {
             onNewIntake={() => setIntakeOpen(true)}
           />
         </div>
+      ) : tab === "map" ? (
+        <div className="max-w-[1600px] mx-auto px-4 py-4">
+          <MapTab
+            property={state.property}
+            extras={extras}
+            enrichment={enrichment}
+            runEnrich={runEnrich}
+            enriching={enriching}
+          />
+        </div>
       ) : (
         <div className="max-w-[1600px] mx-auto px-4 py-4 grid grid-cols-12 gap-4">
           {/* 左: 入力 */}
@@ -468,7 +489,8 @@ function Header({
     { key: "asset", label: "① 資産価値・物件判定" },
     { key: "income", label: "② 収益シミュレーション" },
     { key: "compare", label: "③ 賃貸×民泊 比較" },
-    { key: "catalog", label: `④ 物件カタログ${catalogCount ? ` (${catalogCount})` : ""}` },
+    { key: "map", label: "④ 地図(GIS)" },
+    { key: "catalog", label: `⑤ 物件カタログ${catalogCount ? ` (${catalogCount})` : ""}` },
   ];
   const color = grade === "S" || grade === "A" ? "#2dd4a7" : grade === "B" ? "#f5b14c" : "#f56c6c";
   return (
@@ -531,6 +553,112 @@ function Header({
         </div>
       </div>
     </header>
+  );
+}
+
+// ===================== 地図(GIS)タブ =====================
+function MapTab({
+  property,
+  extras,
+  enrichment,
+  runEnrich,
+  enriching,
+}: {
+  property: PropertyInput;
+  extras: CatalogExtras;
+  enrichment: Enrichment | null;
+  runEnrich: () => void;
+  enriching: boolean;
+}) {
+  const lat = enrichment?.lat;
+  const lon = enrichment?.lon;
+
+  const extLinks = (la: number, lo: number) => [
+    { label: "ハザードマップポータル", url: `https://disaportal.gsi.go.jp/maps/?ll=${la},${lo}&z=16` },
+    { label: "地理院地図", url: `https://maps.gsi.go.jp/#16/${la}/${lo}/` },
+    { label: "国税庁 路線価図", url: "https://www.rosenka.nta.go.jp/" },
+    { label: "全国地価マップ", url: "https://www.chikamap.jp/chikamap/Portal" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card
+        title="地図（GIS）— 国土地理院タイル × ハザード重畳"
+        right={
+          <button
+            onClick={runEnrich}
+            disabled={enriching}
+            className="px-2.5 py-1 rounded-md text-xs font-bold bg-accent/90 hover:bg-accent text-white disabled:opacity-50 print:hidden"
+          >
+            {enriching ? "測位中…" : lat != null ? "📍 再測位" : "📍 住所を測位して地図表示"}
+          </button>
+        }
+      >
+        {lat == null || lon == null ? (
+          <div className="py-16 text-center">
+            <div className="text-4xl mb-2">🗺️</div>
+            <p className="text-sm text-slate-300">
+              所在地（{property.address || "未入力"}）を測位すると、ハザードマップ等を重ねた地図を表示します。
+            </p>
+            <button
+              onClick={runEnrich}
+              disabled={enriching}
+              className="mt-4 px-4 py-2 rounded-md text-sm font-bold bg-accent hover:bg-accent/90 text-white disabled:opacity-50"
+            >
+              {enriching ? "測位中…" : "📍 住所を測位して地図表示"}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-lg overflow-hidden border border-base-600" style={{ height: 520 }}>
+              <PropertyMap lat={lat} lon={lon} label={property.name || property.address} />
+            </div>
+            <div className="flex flex-wrap items-center gap-3 mt-3">
+              <span className="text-[11px] text-slate-400">
+                右上のレイヤー操作で、洪水・津波・土砂・高潮の重畳を切替できます。
+              </span>
+              <div className="flex flex-wrap gap-2 ml-auto print:hidden">
+                {extLinks(lat, lon).map((l) => (
+                  <a
+                    key={l.label}
+                    href={l.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-base-700 hover:bg-base-600 text-slate-200 border border-base-500"
+                  >
+                    {l.label} ↗
+                  </a>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* 用途地域・規制サマリ */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card title="用途地域">
+          <div className="text-lg font-semibold">{extras.zoningUse ?? enrichment?.landUse?.zoningUse ?? "未取得"}</div>
+        </Card>
+        <Card title="建蔽率 / 容積率">
+          <div className="text-lg font-semibold tnum">
+            {(extras.buildingCoveragePct ?? enrichment?.landUse?.buildingCoveragePct) != null
+              ? `${extras.buildingCoveragePct ?? enrichment?.landUse?.buildingCoveragePct}% / ${extras.floorAreaRatioPct ?? enrichment?.landUse?.floorAreaRatioPct ?? "—"}%`
+              : "未取得"}
+          </div>
+        </Card>
+        <Card title="公示地価（最寄）">
+          <div className="text-lg font-semibold tnum">
+            {enrichment?.landPrice?.koujiPerSqm ? yen(enrichment.landPrice.koujiPerSqm) + "/㎡" : "未取得"}
+          </div>
+        </Card>
+        <Card title="ハザード総括">
+          <div className="text-xs text-slate-300">
+            {enrichment?.hazard ? enrichment.hazard.summary : "「測位」で判定します"}
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 }
 
