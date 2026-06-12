@@ -2,6 +2,7 @@
 import React from "react";
 import { ReviewSplit } from "./ReviewSplit";
 import type { ExtractedFields, ExtractionResult } from "@/lib/external/extraction";
+import type { RelatedLink } from "@/lib/external/related";
 
 type Phase = "select" | "loading" | "review" | "error";
 
@@ -22,6 +23,9 @@ export function IntakeModal({
   const [error, setError] = React.useState<string>("");
   const [dragOver, setDragOver] = React.useState(false);
   const [pasteText, setPasteText] = React.useState("");
+  const [urlText, setUrlText] = React.useState("");
+  const [sourceUrl, setSourceUrl] = React.useState<string | undefined>(undefined);
+  const [related, setRelated] = React.useState<RelatedLink[]>([]);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
@@ -35,7 +39,35 @@ export function IntakeModal({
     setSourceName("");
     setError("");
     setPasteText("");
+    setUrlText("");
+    setSourceUrl(undefined);
+    setRelated([]);
   };
+
+  async function handleUrl(url: string) {
+    if (!url.trim()) return;
+    setMime(null);
+    setPreviewUrl(null);
+    setSourceName(url);
+    setSourceUrl(url);
+    setPhase("loading");
+    try {
+      const res = await fetch("/api/intake-url", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "取得に失敗しました");
+      setResult({ fields: data.fields ?? {}, evidence: data.evidence ?? [], notes: data.notes ?? [] });
+      setRelated(data.related ?? []);
+      setSourceUrl(data.sourceUrl ?? url);
+      setPhase("review");
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+      setPhase("error");
+    }
+  }
 
   const close = () => {
     reset();
@@ -157,6 +189,34 @@ export function IntakeModal({
                 </div>
               </div>
 
+              {/* WEBリンク取り込み */}
+              <div className="rounded-lg border border-base-500 p-3">
+                <p className="field-label">
+                  🔗 WEBリンクから取り込む（SUUMO・楽待・at home・HOME&apos;S 等の物件ページURL）
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    className="field-input flex-1"
+                    placeholder="https://… 物件掲載ページのURLを貼り付け"
+                    value={urlText}
+                    onChange={(e) => setUrlText(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleUrl(urlText)}
+                  />
+                  <button
+                    onClick={() => handleUrl(urlText)}
+                    disabled={!/^https?:\/\//i.test(urlText.trim())}
+                    className="px-3 rounded-md text-sm font-semibold bg-accent/90 hover:bg-accent text-white disabled:opacity-50 whitespace-nowrap"
+                  >
+                    リンクから取り込み
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  ページを解析して物件情報を抽出し、<b>同一物件の他サイト掲載リンクを横断探索</b>します。
+                  ※ 各サイトの利用規約に従ってご利用ください。
+                </p>
+              </div>
+
               {/* テキスト貼付 */}
               <div>
                 <p className="field-label">テキストを貼り付けて取り込む（鍵なしでも動作）</p>
@@ -192,6 +252,9 @@ export function IntakeModal({
                 mime={mime}
                 result={result}
                 sourceName={sourceName}
+                sourceUrl={sourceUrl}
+                related={related}
+                onOpenRelated={handleUrl}
                 onConfirm={(fields) => {
                   onApply(fields, sourceName);
                   close();
