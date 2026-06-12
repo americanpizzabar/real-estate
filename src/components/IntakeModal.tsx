@@ -2,7 +2,6 @@
 import React from "react";
 import { ReviewSplit } from "./ReviewSplit";
 import type { ExtractedFields, ExtractionResult } from "@/lib/external/extraction";
-import type { RelatedLink } from "@/lib/external/related";
 
 type Phase = "select" | "loading" | "review" | "error";
 
@@ -25,7 +24,6 @@ export function IntakeModal({
   const [pasteText, setPasteText] = React.useState("");
   const [urlText, setUrlText] = React.useState("");
   const [sourceUrl, setSourceUrl] = React.useState<string | undefined>(undefined);
-  const [related, setRelated] = React.useState<RelatedLink[]>([]);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
@@ -41,7 +39,6 @@ export function IntakeModal({
     setPasteText("");
     setUrlText("");
     setSourceUrl(undefined);
-    setRelated([]);
   };
 
   async function handleUrl(url: string) {
@@ -60,7 +57,6 @@ export function IntakeModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "取得に失敗しました");
       setResult({ fields: data.fields ?? {}, evidence: data.evidence ?? [], notes: data.notes ?? [] });
-      setRelated(data.related ?? []);
       setSourceUrl(data.sourceUrl ?? url);
       setPhase("review");
     } catch (e: any) {
@@ -212,8 +208,7 @@ export function IntakeModal({
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1.5">
-                  ページを解析して物件情報を抽出し、<b>同一物件の他サイト掲載リンクを横断探索</b>します。
-                  ※ 各サイトの利用規約に従ってご利用ください。
+                  ページを解析して物件情報を抽出します。※ 各サイトの利用規約に従ってご利用ください。
                 </p>
               </div>
 
@@ -253,8 +248,6 @@ export function IntakeModal({
                 result={result}
                 sourceName={sourceName}
                 sourceUrl={sourceUrl}
-                related={related}
-                onOpenRelated={handleUrl}
                 onConfirm={(fields) => {
                   onApply(fields, sourceName);
                   close();

@@ -1,9 +1,7 @@
-import { PORTALS, detectPortal } from "./portals";
-
 // =============================================================
 // WEBリンク取り込み — ページ取得とHTML解析
-// ユーザーが指定した1ページを取得し、抽出用テキストと
-// ページ内リンクを取り出す（DOMライブラリ非依存の軽量パース）。
+// ユーザーが指定した1ページを取得し、抽出用テキストを取り出す
+// （DOMライブラリ非依存の軽量パース）。
 // =============================================================
 
 export interface FetchedPage {
@@ -11,8 +9,6 @@ export interface FetchedPage {
   title: string;
   /** AI抽出に渡す統合テキスト（メタ・JSON-LD・本文） */
   text: string;
-  /** ページ内アンカー（href, text） */
-  anchors: { href: string; text: string }[];
 }
 
 const UA =
@@ -73,16 +69,6 @@ export function parseHtml(url: string, html: string): FetchedPage {
     }
   }
 
-  // アンカー抽出
-  const anchors: { href: string; text: string }[] = [];
-  const aRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let am: RegExpExecArray | null;
-  while ((am = aRe.exec(html)) !== null && anchors.length < 500) {
-    const href = resolveUrl(url, am[1]);
-    const text = decodeEntities(am[2].replace(/<[^>]+>/g, "").trim()).slice(0, 80);
-    if (href) anchors.push({ href, text });
-  }
-
   // 本文テキスト: script/styleを除去 → タグ除去 → 空白圧縮
   const body = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -101,36 +87,5 @@ export function parseHtml(url: string, html: string): FetchedPage {
     .filter(Boolean)
     .join("\n");
 
-  return { url, title: ogTitle || title, text, anchors };
-}
-
-function resolveUrl(base: string, href: string): string | null {
-  try {
-    if (href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:"))
-      return null;
-    return new URL(href, base).toString();
-  } catch {
-    return null;
-  }
-}
-
-/**
- * ページ内アンカーから、他ポータルの物件掲載らしきリンクを抽出。
- * 取得元と同一ポータルや同一URLは除外し、重複も排除。
- */
-export function extractPortalLinks(page: FetchedPage): { url: string; text: string; portal: string }[] {
-  const selfPortal = detectPortal(page.url);
-  const seen = new Set<string>([page.url]);
-  const out: { url: string; text: string; portal: string }[] = [];
-  for (const a of page.anchors) {
-    const p = detectPortal(a.href);
-    if (!p) continue;
-    if (selfPortal && p.domain === selfPortal.domain) continue; // 同一ポータル内ナビは除外
-    const clean = a.href.split("#")[0];
-    if (seen.has(clean)) continue;
-    seen.add(clean);
-    out.push({ url: a.href, text: a.text || p.name, portal: p.name });
-    if (out.length >= 12) break;
-  }
-  return out;
+  return { url, title: ogTitle || title, text };
 }

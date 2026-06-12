@@ -6,7 +6,6 @@ import {
   FieldEvidence,
 } from "@/lib/external/extraction";
 import { FIELD_LABELS } from "@/lib/external/extraction";
-import type { RelatedLink } from "@/lib/external/related";
 
 // 2画面スプリット確認UI: 左=元マイソク, 右=抽出フォーム。
 // フィールドにフォーカスすると、画像側の読み取り箇所がハイライトされる。
@@ -30,8 +29,6 @@ export function ReviewSplit({
   result,
   sourceName,
   sourceUrl,
-  related,
-  onOpenRelated,
   onConfirm,
   onCancel,
 }: {
@@ -40,8 +37,6 @@ export function ReviewSplit({
   result: ExtractionResult;
   sourceName?: string;
   sourceUrl?: string;
-  related?: RelatedLink[];
-  onOpenRelated?: (url: string) => void;
   onConfirm: (fields: ExtractedFields) => void;
   onCancel: () => void;
 }) {
@@ -117,14 +112,11 @@ export function ReviewSplit({
             </object>
           )}
           {!previewUrl && sourceUrl && (
-            <div className="space-y-3">
-              <div className="rounded-md bg-base-800 border border-base-600 p-2.5">
-                <div className="text-[11px] text-slate-400 mb-1">取得元ページ</div>
-                <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-xs text-accent underline break-all">
-                  {sourceUrl}
-                </a>
-              </div>
-              <RelatedLinks related={related ?? []} onOpenRelated={onOpenRelated} />
+            <div className="rounded-md bg-base-800 border border-base-600 p-2.5">
+              <div className="text-[11px] text-slate-400 mb-1">取得元ページ</div>
+              <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-xs text-accent underline break-all">
+                {sourceUrl}
+              </a>
             </div>
           )}
           {!previewUrl && !sourceUrl && (
@@ -209,80 +201,6 @@ export function ReviewSplit({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// 同一物件の他サイト掲載・横断探索リンク
-function RelatedLinks({
-  related,
-  onOpenRelated,
-}: {
-  related: RelatedLink[];
-  onOpenRelated?: (url: string) => void;
-}) {
-  if (related.length === 0) {
-    return (
-      <p className="text-[11px] text-slate-500 px-1">
-        他サイトの掲載リンクは見つかりませんでした。物件名・住所が抽出できると検索リンクを生成します。
-      </p>
-    );
-  }
-  const importable = related.filter((r) => r.kind === "same-page" || r.kind === "search-result");
-  const searchLinks = related.filter((r) => r.kind === "search-link");
-
-  const KIND_LABEL: Record<RelatedLink["kind"], string> = {
-    "same-page": "ページ内リンク",
-    "search-result": "検索ヒット",
-    "search-link": "検索リンク",
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="text-[11px] text-slate-400">
-        同一物件の他サイト掲載（横断探索）{importable.length ? `· 取込可能 ${importable.length}件` : ""}
-      </div>
-      {importable.map((r, i) => (
-        <div key={`imp-${i}`} className="rounded-md border border-base-600 bg-base-800 p-2 flex items-center gap-2">
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-accent/20 text-accent shrink-0">
-            {r.portal ?? KIND_LABEL[r.kind]}
-          </span>
-          <span className="text-[11px] text-slate-300 truncate flex-1" title={r.title}>
-            {r.title || r.url}
-          </span>
-          {onOpenRelated && (
-            <button
-              onClick={() => onOpenRelated(r.url)}
-              className="px-2 py-0.5 rounded text-[10px] font-bold bg-accent/90 hover:bg-accent text-white shrink-0"
-            >
-              取り込む
-            </button>
-          )}
-          <a href={r.url} target="_blank" rel="noreferrer" className="text-[10px] text-slate-400 hover:text-accent shrink-0">
-            開く↗
-          </a>
-        </div>
-      ))}
-      {searchLinks.length > 0 && (
-        <details className="rounded-md border border-base-700 bg-base-900 p-2">
-          <summary className="text-[11px] text-slate-400 cursor-pointer">
-            クロスポータル検索リンク（{searchLinks.length}件）
-          </summary>
-          <div className="mt-2 space-y-1">
-            {searchLinks.map((r, i) => (
-              <a
-                key={`s-${i}`}
-                href={r.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-[11px] text-accent hover:underline truncate"
-              >
-                🔎 {r.title}
-              </a>
-            ))}
-          </div>
-        </details>
-      )}
     </div>
   );
 }
