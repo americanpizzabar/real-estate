@@ -33,17 +33,21 @@ import { yen, pct, signedPct, man } from "@/lib/format";
 import { IntakeModal } from "@/components/IntakeModal";
 import { Catalog } from "@/components/Catalog";
 import type { ExtractedFields } from "@/lib/external/extraction";
+import type { Enrichment } from "@/lib/external/enrichment";
 import {
-  loadCatalog,
-  upsertItem,
-  updateItem,
-  deleteItem,
   newId,
   generateTags,
   type CatalogItem,
   type CatalogExtras,
   type PropertyStatus,
 } from "@/lib/catalog";
+import {
+  fetchCatalog,
+  saveItem,
+  patchStatus,
+  removeItem as removeFromStore,
+  getMode,
+} from "@/lib/catalogStore";
 
 const CURRENT_YEAR = 2026;
 
@@ -73,9 +77,11 @@ export default function Home() {
   const [catalog, setCatalog] = React.useState<CatalogItem[]>([]);
   const [currentItemId, setCurrentItemId] = React.useState<string | null>(null);
   const [extras, setExtras] = React.useState<CatalogExtras>({});
+  const [enrichment, setEnrichment] = React.useState<Enrichment | null>(null);
+  const [enriching, setEnriching] = React.useState(false);
 
   React.useEffect(() => {
-    setCatalog(loadCatalog());
+    fetchCatalog().then(({ items }) => setCatalog(items));
   }, []);
 
   const set = (patch: Partial<InputState>) => setState((s) => ({ ...s, ...patch }));
@@ -261,11 +267,57 @@ export default function Home() {
       sourceName,
       snapshot,
     };
-    setCatalog(upsertItem(item));
+    saveItem(item).then(setCatalog);
     setCurrentItemId(id);
     setExtras(newExtras);
+    setEnrichment(null);
     setState((s) => ({ ...s, property: np, rental: newRental }));
     setTab("asset");
+  }
+
+  // ---- 公的データ自動紐付け ----
+  async function runEnrich() {
+    if (!state.property.address) {
+      alert("所在地を入力してください。");
+      return;
+    }
+    setEnriching(true);
+    try {
+      const res = await fetch("/api/enrich", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          address: state.property.address,
+          maisoku: {
+            rosenkaPerSqm: state.property.rosenkaPerSqm || undefined,
+            koujiPerSqm: state.property.koujiPerSqm || undefined,
+            zoningUse: extras.zoningUse,
+            buildingCoveragePct: extras.buildingCoveragePct,
+            floorAreaRatioPct: extras.floorAreaRatioPct,
+          },
+        }),
+      });
+      const data = (await res.json()) as Enrichment & { error?: string };
+      if (!res.ok) throw new Error((data as any).error || "取得に失敗しました");
+      setEnrichment(data);
+      // 空欄を公的データで自動補完
+      if (data.landPrice?.koujiPerSqm && !state.property.koujiPerSqm) {
+        setState((s) => ({ ...s, property: { ...s.property, koujiPerSqm: data.landPrice!.koujiPerSqm! } }));
+      }
+      const lu = data.landUse;
+      if (lu && lu.source === "reinfolib") {
+        setExtras((e) => ({
+          ...e,
+          zoningUse: e.zoningUse ?? lu.zoningUse,
+          buildingCoveragePct: e.buildingCoveragePct ?? lu.buildingCoveragePct,
+          floorAreaRatioPct: e.floorAreaRatioPct ?? lu.floorAreaRatioPct,
+        }));
+      }
+    } catch (e: any) {
+      alert(`公的データ取得エラー: ${e?.message ?? e}`);
+    } finally {
+      setEnriching(false);
+    }
   }
 
   // ---- カタログ操作 ----
@@ -273,13 +325,14 @@ export default function Home() {
     setState((s) => ({ ...s, property: item.property }));
     setExtras(item.extras);
     setCurrentItemId(item.id);
+    setEnrichment(null);
     setTab("asset");
   }
   function changeStatus(id: string, status: PropertyStatus) {
-    setCatalog(updateItem(id, { status }));
+    patchStatus(id, status).then(setCatalog);
   }
   function removeItem(id: string) {
-    setCatalog(deleteItem(id));
+    removeFromStore(id).then(setCatalog);
     if (currentItemId === id) setCurrentItemId(null);
   }
   // 現在の物件をカタログへ保存/更新
@@ -302,7 +355,7 @@ export default function Home() {
       sourceName: existing?.sourceName,
       snapshot,
     };
-    setCatalog(upsertItem(item));
+    saveItem(item).then(setCatalog);
     setCurrentItemId(id);
   }
 
@@ -355,6 +408,9 @@ export default function Home() {
                 setPref={setPref}
                 loadMarket={loadMarket}
                 loadingMarket={loadingMarket}
+                enrichment={enrichment}
+                runEnrich={runEnrich}
+                enriching={enriching}
               />
             )}
 
@@ -478,6 +534,134 @@ function Header({
   );
 }
 
+// ===================== 公的データ自動紐付け =====================
+function EnrichPanel({
+  enrichment,
+  runEnrich,
+  enriching,
+  address,
+}: {
+  enrichment: Enrichment | null;
+  runEnrich: () => void;
+  enriching: boolean;
+  address: string;
+}) {
+  const hazardLevelColor = (level: number) =>
+    level === 0 ? "#2dd4a7" : level <= 2 ? "#f5b14c" : "#f56c6c";
+  return (
+    <Card
+      title="公的データ自動紐付け（住所→緯度経度→用途地域・地価・ハザード）"
+      right={
+        <button
+          onClick={runEnrich}
+          disabled={enriching}
+          className="px-2.5 py-1 rounded-md text-xs font-bold bg-accent/90 hover:bg-accent text-white disabled:opacity-50 print:hidden"
+        >
+          {enriching ? "取得中…" : "📍 公的データ取得"}
+        </button>
+      }
+    >
+      {!enrichment ? (
+        <p className="text-sm text-slate-400 py-4 text-center">
+          「公的データ取得」で、所在地（{address || "未入力"}）をジオコーディングし、
+          ハザード（洪水・津波・土砂）・用途地域・公示地価を自動取得して、マイソク記載と突合せます。
+          <br />
+          <span className="text-[11px] text-slate-500">
+            ※ ジオコーディング・ハザードはキー不要で動作。用途地域・公示地価は不動産情報ライブラリAPIキー設定時に取得。
+          </span>
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            <span>📌 {enrichment.normalizedAddress}</span>
+            <span className="tnum">
+              ({enrichment.lat.toFixed(5)}, {enrichment.lon.toFixed(5)})
+            </span>
+            <a
+              href={`https://www.google.com/maps?q=${enrichment.lat},${enrichment.lon}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent underline print:hidden"
+            >
+              地図で開く
+            </a>
+          </div>
+
+          {/* ハザード */}
+          {enrichment.hazard && (
+            <div>
+              <div className="text-[11px] text-slate-400 mb-1.5">ハザードマップ判定（国土地理院）</div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "洪水浸水", h: enrichment.hazard.flood },
+                  { label: "津波浸水", h: enrichment.hazard.tsunami },
+                  { label: "土砂災害", h: enrichment.hazard.landslide },
+                ].map(({ label, h }) => (
+                  <div
+                    key={label}
+                    className="rounded-lg border p-2.5"
+                    style={{ borderColor: `${hazardLevelColor(h.level)}66`, background: `${hazardLevelColor(h.level)}14` }}
+                  >
+                    <div className="text-[11px] text-slate-400">{label}</div>
+                    <div className="text-sm font-bold" style={{ color: hazardLevelColor(h.level) }}>
+                      {h.affected ? "⚠ 該当" : "✓ 該当なし"}
+                    </div>
+                    <div className="text-[11px] text-slate-300 mt-0.5">{h.label}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1.5">{enrichment.hazard.summary}</p>
+            </div>
+          )}
+
+          {/* 用途地域・地価 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Metric
+              label="用途地域"
+              value={enrichment.landUse?.zoningUse ?? "未取得"}
+              sub={enrichment.landUse?.source === "reinfolib" ? "不動産情報ライブラリ" : "要APIキー"}
+            />
+            <Metric
+              label="建蔽率 / 容積率"
+              value={
+                enrichment.landUse?.buildingCoveragePct != null
+                  ? `${enrichment.landUse.buildingCoveragePct}% / ${enrichment.landUse.floorAreaRatioPct ?? "—"}%`
+                  : "未取得"
+              }
+            />
+            <Metric
+              label="公示地価（最寄）"
+              value={enrichment.landPrice?.koujiPerSqm ? yen(enrichment.landPrice.koujiPerSqm) + "/㎡" : "未取得"}
+              sub={enrichment.landPrice?.distanceM != null ? `約${enrichment.landPrice.distanceM}m先` : undefined}
+            />
+            <Metric label="緯度経度" value={`${enrichment.lat.toFixed(4)}, ${enrichment.lon.toFixed(4)}`} />
+          </div>
+
+          {/* 突合せアラート */}
+          {enrichment.checks.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[11px] text-slate-400">マイソク記載 × 公的データ 突合せ</div>
+              {enrichment.checks.map((c, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5"
+                  style={{
+                    background: c.status === "match" ? "#2dd4a714" : "#f56c6c14",
+                    color: c.status === "match" ? "#2dd4a7" : "#f56c6c",
+                  }}
+                >
+                  <span>{c.status === "match" ? "✓" : "⚠"}</span>
+                  <span className="text-slate-200">{c.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ===================== Asset Tab =====================
 function AssetTab({
   cost,
@@ -490,9 +674,18 @@ function AssetTab({
   setPref,
   loadMarket,
   loadingMarket,
+  enrichment,
+  runEnrich,
+  enriching,
 }: any) {
   return (
     <>
+      <EnrichPanel
+        enrichment={enrichment}
+        runEnrich={runEnrich}
+        enriching={enriching}
+        address={property.address}
+      />
       <div className="grid grid-cols-12 gap-4">
         {/* スコア */}
         <Card title="一撃判定スコア" className="col-span-12 md:col-span-4">

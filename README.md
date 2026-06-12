@@ -41,6 +41,21 @@
   「民泊ポテンシャル高」等）を自動付与。検討中／打診中／見送り／購入済みのステータス管理・絞り込み。
   ※ 現状は localStorage 永続化（Supabase等のDBへ差し替え可能な薄いCRUDで分離）。
 
+### 公的データ自動紐付け（正確さの肝）
+資産価値タブの「公的データ取得」で、所在地から各種公的情報を裏側で自動取得・照合します。
+- **ジオコーディング**（国土地理院 住所検索API・**キー不要**）: 住所 → 緯度経度・正規化住所。
+- **ハザードマップ自動判定**（国土地理院ラスタタイル・**キー不要**）: 対象地点のピクセル色を解析し、
+  **洪水浸水・津波浸水・土砂災害**のリスク該当/浸水深ランクを判定。
+- **用途地域・建蔽率・容積率／公示地価**（不動産情報ライブラリ・要キー）: GeoJSONを取得し、
+  対象座標を point-in-polygon で判定、最寄り公示地価を距離計算で特定。
+- **マイソク × 公的データ 突合せ**: 建蔽率・容積率・用途地域・公示地価の食い違いを自動アラート。
+
+### 物件カタログの永続化（Turso / libSQL）
+カタログは Turso（SQLite互換のエッジDB）に永続化。`TURSO_DATABASE_URL` 未設定時は localStorage で動作。
+- 端末ごとの匿名 owner キーで分離（テーブルは初回アクセス時に冪等生成）。
+- 将来サインインを導入すれば owner をユーザーIDに差し替えるだけで複数端末同期が可能。
+- セットアップ: `turso db create fudosan` → `turso db show --url` と `turso db tokens create` で2つの環境変数を設定。
+
 ### メール転送取り込み（要設定）
 専用アドレス宛の転送でマイソク添付を自動解析する Webhook を `POST /api/inbound-email` に用意。
 メール受信は外部サービスが必要です（いずれか）:
@@ -69,7 +84,9 @@ npm test         # 計算エンジンのテスト
 ## 環境変数（任意・未設定でも動作）
 | 変数 | 用途 |
 |------|------|
-| `REINFOLIB_API_KEY` | 国土交通省 不動産情報ライブラリ API。未設定時は周辺事例がデモデータになります。 |
+| `REINFOLIB_API_KEY` | 国土交通省 不動産情報ライブラリ API。周辺成約事例（市場乖離）＋**用途地域・建蔽率・容積率・公示地価の自動取得**に使用。未設定時はデモ／未取得表示。 |
+| `TURSO_DATABASE_URL` | 物件カタログの永続化（Turso / libSQL）。未設定時はブラウザの localStorage に自動フォールバック。 |
+| `TURSO_AUTH_TOKEN` | Turso のアクセストークン（リモートDB利用時）。 |
 | `GOOGLE_AI_API_KEY` | マイソクのAI抽出 ＆ **PDF/画像のファイル取込（マルチモーダル）**（Google AI / Gemini）。`GEMINI_API_KEY` でも可。テキスト貼付は未設定時も正規表現抽出で動作（ファイル取込は要キー）。 |
 | `GEMINI_MODEL` | 使用するGeminiモデル（任意）。既定 `gemini-2.0-flash`。 |
 
@@ -84,11 +101,16 @@ src/
     api/parse-maisoku/     マイソク抽出・テキスト（Gemini or 正規表現）
     api/intake/            マイソク抽出・PDF/画像（Gemini マルチモーダル）
     api/inbound-email/     メール転送取り込みWebhook（要メール受信基盤）
+    api/geocode/           国土地理院ジオコーディング（キー不要）
+    api/enrich/            公的データ自動紐付け（ジオコーディング＋ハザード＋用途地域＋地価＋突合せ）
+    api/catalog/           物件カタログ永続化（Turso/libSQL・GET/POST/PATCH/DELETE）
   components/               UI・チャート・取り込み（IntakeModal/ReviewSplit/Catalog/...）
   lib/
     calc/                  計算エンジン（積算・ローン・収益・予測・スコア・ストレス）
-    catalog.ts             物件カタログ（localStorage CRUD・自動タグ付け）
-    external/              外部連携・マーケット分析・抽出スキーマ・Geminiクライアント
+    catalog.ts             物件カタログ型・自動タグ付け・localStorage CRUD
+    catalogStore.ts        永続化ストア（Turso優先・localStorageフォールバック）
+    db/turso.ts            Turso(libSQL)クライアント・スキーマ
+    external/              外部連携（geocode/hazard/reinfolibGeo/enrichment/extraction/gemini/...）
 ```
 
 ## 今後の拡張余地
