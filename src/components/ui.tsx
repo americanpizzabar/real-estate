@@ -167,6 +167,55 @@ export function Toggle({
   );
 }
 
+/** 数値入力＋スライダー（範囲が決まった値の直感的調整用）。 */
+export function RangeField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  suffix,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+}) {
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  return (
+    <label className="block">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] font-medium text-slate-400">
+          {label}
+          {suffix ? <span className="text-slate-500"> ({suffix})</span> : null}
+        </span>
+        <input
+          type="number"
+          className="w-20 bg-base-900 border border-base-600 rounded px-1.5 py-0.5 text-xs text-right tnum text-slate-100 focus:outline-none focus:ring-1 focus:ring-accent"
+          value={Number.isFinite(value) ? value : 0}
+          step={step}
+          min={min}
+          max={max}
+          onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+        />
+      </div>
+      <input
+        type="range"
+        className="w-full h-1.5 accent-[#4f9cf9] cursor-pointer"
+        value={clamp(Number.isFinite(value) ? value : 0)}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </label>
+  );
+}
+
 /** 折りたたみ可能なセクション（アコーディオン）。 */
 export function Section({
   title,

@@ -4,6 +4,7 @@ import {
   Section,
   Segmented,
   NumberField,
+  RangeField,
   TextField,
   SelectField,
   Toggle,
@@ -106,10 +107,8 @@ export function InputPanel({
             <NumberField label="借入額" suffix="円" step={1_000_000} value={state.loan.amount} onChange={(v) => set({ loan: { ...state.loan, amount: v } })} />
             <NumberField label="自己資金(頭金)" suffix="円" step={1_000_000} value={state.downPayment} onChange={(v) => set({ downPayment: v })} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <NumberField label="金利" suffix="%" step={0.1} value={state.loan.annualRatePct} onChange={(v) => set({ loan: { ...state.loan, annualRatePct: v } })} />
-            <NumberField label="期間" suffix="年" value={state.loan.years} onChange={(v) => set({ loan: { ...state.loan, years: v } })} />
-          </div>
+          <RangeField label="金利" suffix="%" min={0} max={5} step={0.05} value={state.loan.annualRatePct} onChange={(v) => set({ loan: { ...state.loan, annualRatePct: v } })} />
+          <RangeField label="返済期間" suffix="年" min={1} max={45} step={1} value={state.loan.years} onChange={(v) => set({ loan: { ...state.loan, years: v } })} />
           <SelectField<RepaymentType>
             label="返済方式"
             value={state.loan.repayment}
@@ -140,26 +139,20 @@ export function InputPanel({
         {mode === "rental" ? (
           <div className="space-y-2.5">
             <NumberField label="月額満室賃料(合計)" suffix="円" step={10_000} value={state.rental.monthlyGrossRent} onChange={(v) => set({ rental: { ...state.rental, monthlyGrossRent: v } })} />
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField label="空室率" suffix="%" value={state.rental.vacancyRatePct} onChange={(v) => set({ rental: { ...state.rental, vacancyRatePct: v } })} />
-              <NumberField label="運営費率" suffix="%" value={state.rental.opexRatePct} onChange={(v) => set({ rental: { ...state.rental, opexRatePct: v } })} />
-            </div>
-            <NumberField label="賃料下落率" suffix="%/年" step={0.1} value={state.rental.rentDeclinePctPerYear} onChange={(v) => set({ rental: { ...state.rental, rentDeclinePctPerYear: v } })} />
+            <RangeField label="空室率" suffix="%" min={0} max={30} step={1} value={state.rental.vacancyRatePct} onChange={(v) => set({ rental: { ...state.rental, vacancyRatePct: v } })} />
+            <RangeField label="運営費率" suffix="%" min={0} max={40} step={1} value={state.rental.opexRatePct} onChange={(v) => set({ rental: { ...state.rental, opexRatePct: v } })} />
+            <RangeField label="賃料下落率" suffix="%/年" min={0} max={5} step={0.1} value={state.rental.rentDeclinePctPerYear} onChange={(v) => set({ rental: { ...state.rental, rentDeclinePctPerYear: v } })} />
           </div>
         ) : (
           <div className="space-y-2.5">
             <div className="grid grid-cols-2 gap-2">
               <NumberField label="ADR(客単価)" suffix="円/泊" step={1_000} value={state.minpaku.adr} onChange={(v) => set({ minpaku: { ...state.minpaku, adr: v } })} />
-              <NumberField label="稼働率" suffix="%" value={state.minpaku.occupancyPct} onChange={(v) => set({ minpaku: { ...state.minpaku, occupancyPct: v } })} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
               <NumberField label="営業可能日数" suffix="日/年" value={state.minpaku.operableDays} onChange={(v) => set({ minpaku: { ...state.minpaku, operableDays: v } })} />
-              <NumberField label="平均宿泊数" suffix="泊" step={0.5} value={state.minpaku.avgStayNights} onChange={(v) => set({ minpaku: { ...state.minpaku, avgStayNights: v } })} />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField label="運営代行手数料" suffix="%" value={state.minpaku.managementFeePct} onChange={(v) => set({ minpaku: { ...state.minpaku, managementFeePct: v } })} />
-              <NumberField label="OTA手数料" suffix="%" value={state.minpaku.otaFeePct} onChange={(v) => set({ minpaku: { ...state.minpaku, otaFeePct: v } })} />
-            </div>
+            <RangeField label="稼働率" suffix="%" min={0} max={100} step={1} value={state.minpaku.occupancyPct} onChange={(v) => set({ minpaku: { ...state.minpaku, occupancyPct: v } })} />
+            <NumberField label="平均宿泊数" suffix="泊" step={0.5} value={state.minpaku.avgStayNights} onChange={(v) => set({ minpaku: { ...state.minpaku, avgStayNights: v } })} />
+            <RangeField label="運営代行手数料" suffix="%" min={0} max={30} step={1} value={state.minpaku.managementFeePct} onChange={(v) => set({ minpaku: { ...state.minpaku, managementFeePct: v } })} />
+            <RangeField label="OTA手数料" suffix="%" min={0} max={20} step={1} value={state.minpaku.otaFeePct} onChange={(v) => set({ minpaku: { ...state.minpaku, otaFeePct: v } })} />
             <div className="grid grid-cols-2 gap-2">
               <NumberField label="清掃費" suffix="円/回" step={500} value={state.minpaku.cleaningCostPerStay} onChange={(v) => set({ minpaku: { ...state.minpaku, cleaningCostPerStay: v } })} />
               <NumberField label="変動費" suffix="円/泊" step={500} value={state.minpaku.variableCostPerNight} onChange={(v) => set({ minpaku: { ...state.minpaku, variableCostPerNight: v } })} />

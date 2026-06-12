@@ -89,10 +89,18 @@ export default function Home() {
   const [extras, setExtras] = React.useState<CatalogExtras>({});
   const [enrichment, setEnrichment] = React.useState<Enrichment | null>(null);
   const [enriching, setEnriching] = React.useState(false);
+  const [onboarded, setOnboarded] = React.useState(true); // 既定はtrue→ちらつき防止、effectで判定
+  const [mobileInputsOpen, setMobileInputsOpen] = React.useState(false);
 
   React.useEffect(() => {
     fetchCatalog().then(({ items }) => setCatalog(items));
+    setOnboarded(window.localStorage.getItem("fudosan_onboarded") === "1");
   }, []);
+
+  const dismissOnboarding = () => {
+    window.localStorage.setItem("fudosan_onboarded", "1");
+    setOnboarded(true);
+  };
 
   const set = (patch: Partial<InputState>) => setState((s) => ({ ...s, ...patch }));
 
@@ -379,7 +387,17 @@ export default function Home() {
         <div className="max-w-[1600px] mx-auto px-4 py-4 grid grid-cols-12 gap-4">
           {/* 左: 入力 */}
           <aside className="col-span-12 lg:col-span-3 print:hidden">
-            <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto pr-1">
+            {/* モバイルは折りたたみ */}
+            <button
+              onClick={() => setMobileInputsOpen((o) => !o)}
+              className="lg:hidden w-full mb-2 flex items-center justify-between bg-base-800 border border-base-600 rounded-lg px-3.5 py-2.5 text-sm font-semibold text-slate-200"
+            >
+              <span>⚙️ 物件・条件を編集</span>
+              <span className="text-xs text-slate-400">{mobileInputsOpen ? "閉じる ▲" : "開く ▼"}</span>
+            </button>
+            <div
+              className={`${mobileInputsOpen ? "block" : "hidden"} lg:block lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto pr-1`}
+            >
               <InputPanel state={state} set={set} mode={mode} setMode={setMode} onIntake={() => setIntakeOpen(true)} />
             </div>
           </aside>
@@ -401,6 +419,9 @@ export default function Home() {
                 enrichment={enrichment}
                 runEnrich={runEnrich}
                 enriching={enriching}
+                showOnboarding={!onboarded}
+                onIntake={() => setIntakeOpen(true)}
+                dismissOnboarding={dismissOnboarding}
               />
             )}
 
@@ -454,12 +475,12 @@ function Header({
   onSave: () => void;
   saved: boolean;
 }) {
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "asset", label: "① 資産価値・物件判定" },
-    { key: "income", label: "② 収益シミュレーション" },
-    { key: "compare", label: "③ 賃貸×民泊 比較" },
-    { key: "map", label: "④ 地図(GIS)" },
-    { key: "catalog", label: `⑤ 物件カタログ${catalogCount ? ` (${catalogCount})` : ""}` },
+  const tabs: { key: Tab; label: string; short: string }[] = [
+    { key: "asset", label: "① 資産価値・物件判定", short: "資産価値" },
+    { key: "income", label: "② 収益シミュレーション", short: "収益" },
+    { key: "compare", label: "③ 賃貸×民泊 比較", short: "比較" },
+    { key: "map", label: "④ 地図(GIS)", short: "地図" },
+    { key: "catalog", label: `⑤ 物件カタログ${catalogCount ? ` (${catalogCount})` : ""}`, short: `カタログ${catalogCount ? `(${catalogCount})` : ""}` },
   ];
   const color = grade === "S" || grade === "A" ? "#2dd4a7" : grade === "B" ? "#f5b14c" : "#f56c6c";
   return (
@@ -488,7 +509,8 @@ function Header({
                   : "text-slate-400 hover:text-slate-200 hover:bg-base-700"
               }`}
             >
-              {t.label}
+              <span className="md:hidden">{t.short}</span>
+              <span className="hidden md:inline">{t.label}</span>
             </button>
           ))}
         </nav>
@@ -523,6 +545,49 @@ function Header({
         </div>
       </div>
     </header>
+  );
+}
+
+// ===================== オンボーディング =====================
+function OnboardingHero({ onIntake, dismiss }: { onIntake: () => void; dismiss: () => void }) {
+  const methods = [
+    { icon: "📄", label: "PDF/画像をドラッグ" },
+    { icon: "📷", label: "カメラで撮影" },
+    { icon: "🔗", label: "物件URLを貼付" },
+    { icon: "📝", label: "テキスト貼付" },
+  ];
+  return (
+    <div className="card p-5 mb-4 relative overflow-hidden bg-gradient-to-br from-base-800 to-base-700 border-accent/30 print:hidden">
+      <button
+        onClick={dismiss}
+        className="absolute top-3 right-3 text-slate-400 hover:text-slate-200 text-sm"
+        title="閉じる"
+      >
+        ✕
+      </button>
+      <h2 className="text-lg font-bold text-slate-100">マイソクを取り込んで、一撃で投資判断。</h2>
+      <p className="text-sm text-slate-300 mt-1">
+        積算価格・土地値比率・収益（賃貸/民泊）・ハザード・周辺相場までワンストップ。まずは物件を取り込みましょう。
+      </p>
+      <div className="flex flex-wrap gap-2 mt-3">
+        {methods.map((m) => (
+          <span key={m.label} className="pill bg-base-900/70 text-slate-300 border border-base-600">
+            {m.icon} {m.label}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 mt-4">
+        <button
+          onClick={onIntake}
+          className="px-4 py-2 rounded-lg text-sm font-bold bg-accent hover:bg-accent/90 text-white shadow"
+        >
+          📥 物件を取り込む
+        </button>
+        <button onClick={dismiss} className="text-xs text-slate-400 hover:text-slate-200">
+          サンプル物件のまま試す →
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -775,9 +840,15 @@ function AssetTab({
   enrichment,
   runEnrich,
   enriching,
+  showOnboarding,
+  onIntake,
+  dismissOnboarding,
 }: any) {
   return (
     <>
+      {showOnboarding && (
+        <OnboardingHero onIntake={onIntake} dismiss={dismissOnboarding} />
+      )}
       <EnrichPanel
         enrichment={enrichment}
         runEnrich={runEnrich}
