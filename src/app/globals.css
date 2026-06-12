@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #0b0f17;
+  color: #e6ebf2;
+}
+
+body {
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+/* 数値はタブラー（等幅数字）で桁を揃える */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* スクロールバー（ダーク） */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #111827;
+}
+::-webkit-scrollbar-thumb {
+  background: #2e3a4f;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4860;
+}
+
+/* カード共通 */
+.card {
+  @apply bg-base-800 border border-base-600/60 rounded-xl;
+}
+
+.card-title {
+  @apply text-xs font-semibold tracking-wide text-slate-400 uppercase;
+}
+
+/* 入力 */
+.field-label {
+  @apply block text-[11px] font-medium text-slate-400 mb-1;
+}
+.field-input {
+  @apply w-full bg-base-900 border border-base-600 rounded-md px-2.5 py-1.5 text-sm text-slate-100
+    focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent tnum;
+}
+.field-input::-webkit-outer-spin-button,
+.field-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pill {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold;
+}
+
+/* レポートPDF出力（ブラウザ印刷）用。銀行・投資委員会提出を想定し白背景に。 */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .card {
+    border-color: #ddd !important;
+    background: #fff !important;
+    break-inside: avoid;
+  }
+  .card-title,
+  .field-label {
+    color: #555 !important;
+  }
+  @page {
+    margin: 12mm;
+  }
+}
