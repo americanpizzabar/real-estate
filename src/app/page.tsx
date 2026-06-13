@@ -19,7 +19,6 @@ import {
   DEFAULT_DISCOUNT_RATE,
   DEFAULT_PROJECTION_YEARS,
   DEFAULT_EXIT_CAP_RATE,
-  PREFECTURES,
 } from "@/lib/defaults";
 import { calcCostApproach, judgeLandValueStance } from "@/lib/calc/costApproach";
 import { calcInitialCosts } from "@/lib/calc/initialCosts";
@@ -28,7 +27,11 @@ import { rentalIncome, minpakuIncome } from "@/lib/calc/income";
 import { runStressTest, buildSensitivityMatrix } from "@/lib/calc/stress";
 import { annualDebtService } from "@/lib/calc/loan";
 import { computeScore } from "@/lib/calc/scoring";
-import { calcDeviation, type MarketStats } from "@/lib/external/marketAnalysis";
+import {
+  calcDeviation,
+  estimateFairValue,
+  type MarketAnalysis,
+} from "@/lib/external/marketAnalysis";
 import type { IncomeMode, PropertyInput, RentalParams } from "@/lib/calc/types";
 import { yen, pct, signedPct, man } from "@/lib/format";
 import { IntakeModal } from "@/components/IntakeModal";
@@ -81,7 +84,12 @@ export default function Home() {
   const [state, setState] = React.useState<InputState>(initialState);
   const [tab, setTab] = React.useState<Tab>("asset");
   const [mode, setMode] = React.useState<IncomeMode>("rental");
-  const [market, setMarket] = React.useState<{ stats: MarketStats; source: string } | null>(null);
+  const [market, setMarket] = React.useState<{
+    analysis: MarketAnalysis;
+    scope: any;
+    source: string;
+    fetchError: string | null;
+  } | null>(null);
   const [pref, setPref] = React.useState("13");
   const [loadingMarket, setLoadingMarket] = React.useState(false);
   const [intakeOpen, setIntakeOpen] = React.useState(false);
@@ -105,16 +113,28 @@ export default function Home() {
 
   const set = (patch: Partial<InputState>) => setState((s) => ({ ...s, ...patch }));
 
-  // ---- 市場データ取得 ----
+  // ---- 周辺事例の取得（住所→市区町村レベルで自動絞り込み）----
   async function loadMarket() {
     setLoadingMarket(true);
     try {
       const u = new URL("/api/market", window.location.origin);
-      u.searchParams.set("area", pref);
-      u.searchParams.set("targetArea", String(state.property.landArea));
+      // 公的データ取得済みなら座標で（速い・確実）、無ければ住所から自動特定
+      if (enrichment) {
+        u.searchParams.set("lat", String(enrichment.lat));
+        u.searchParams.set("lon", String(enrichment.lon));
+      } else if (state.property.address) {
+        u.searchParams.set("address", state.property.address);
+      } else {
+        u.searchParams.set("area", pref); // 最終フォールバック（県レベル）
+      }
       const res = await fetch(u.toString());
       const data = await res.json();
-      setMarket({ stats: data.stats, source: data.source });
+      setMarket({
+        analysis: data.analysis,
+        scope: data.scope,
+        source: data.source,
+        fetchError: data.fetchError ?? null,
+      });
     } catch {
       setMarket(null);
     } finally {
@@ -169,15 +189,31 @@ export default function Home() {
     [state.property, state.loan.amount, mode]
   );
 
-  // 市場乖離
-  const deviation = React.useMemo(() => {
-    if (!market || market.stats.estimatedFairValue <= 0) return null;
-    return calcDeviation(state.property.price, market.stats.estimatedFairValue, cost.totalCostValue);
-  }, [market, state.property.price, cost.totalCostValue]);
+  // 適正市場価格の推定（計算式つき）と乖離
+  const fairValue = React.useMemo(() => {
+    if (!market) return null;
+    return estimateFairValue(
+      market.analysis,
+      state.property.landArea,
+      state.property.buildingArea,
+      cost.buildingValue
+    );
+  }, [market, state.property.landArea, state.property.buildingArea, cost.buildingValue]);
 
+  const deviation = React.useMemo(() => {
+    if (!fairValue || fairValue.fairValue <= 0) return null;
+    return calcDeviation(state.property.price, fairValue.fairValue, cost.totalCostValue);
+  }, [fairValue, state.property.price, cost.totalCostValue]);
+
+  // デモ事例は判断材料にしない（スコアの市場割安度は中立50のまま）
   const score = React.useMemo(
-    () => computeScore(cost, proj.metrics, deviation ? -deviation.vsFairPct : null),
-    [cost, proj.metrics, deviation]
+    () =>
+      computeScore(
+        cost,
+        proj.metrics,
+        deviation && market?.source === "reinfolib" ? -deviation.vsFairPct : null
+      ),
+    [cost, proj.metrics, deviation, market?.source]
   );
 
   const dscrJudge = judgeDscr(proj.metrics.dscr);
@@ -358,7 +394,15 @@ export default function Home() {
     rows: proj.rows,
     initialCosts,
     dscrLabel: dscrJudge.label,
-    market,
+    market: market
+      ? {
+          source: market.source,
+          municipality: market.analysis.municipality,
+          periods: market.scope?.periods ?? [],
+          counts: `土地${market.analysis.land?.count ?? 0}件・土地建物${market.analysis.landBldg?.count ?? 0}件・区分${market.analysis.condo?.count ?? 0}件`,
+        }
+      : null,
+    fairValue: fairValue && fairValue.fairValue > 0 ? fairValue : null,
     deviation,
     enrichment,
     extras,
@@ -432,6 +476,7 @@ export default function Home() {
                 property={state.property}
                 market={market}
                 deviation={deviation}
+                fairValue={fairValue}
                 pref={pref}
                 setPref={setPref}
                 loadMarket={loadMarket}
@@ -865,6 +910,71 @@ function EnrichPanel({
   );
 }
 
+// ===================== 透明性: 計算方法とデータソース =====================
+function MethodologyPanel({ cost, property, market, enrichment, fairValue }: any) {
+  const rows: { item: string; how: string; values: string }[] = [
+    {
+      item: "土地評価額（積算）",
+      how: "路線価 × 土地面積 × 画地補正率。路線価は手入力（マイソク/国税庁路線価図）または公的データ取得で補完。",
+      values: `${(property.rosenkaPerSqm || 0).toLocaleString()}円/㎡ × ${property.landArea}㎡ × 補正${cost.shapeFactor.toFixed(3)} = ${yen(cost.landValue)}`,
+    },
+    {
+      item: "建物価値（積算）",
+      how: "構造別の再調達単価 × 延床面積 × 残存年数/法定耐用年数（RC47年/S34年/木造22年等）。",
+      values: `再調達 ${yen(cost.buildingReplacementCost)} × 残存${cost.remainingYears}/${cost.legalLifespan}年 = ${yen(cost.buildingValue)}`,
+    },
+    {
+      item: "実勢流動性価格（参考）",
+      how: "補正後土地値 × 流動性倍率1.18（路線価≒公示の8割の補正）。公示地価入力時はその面積換算と平均。",
+      values: yen(cost.landMarketValue),
+    },
+    {
+      item: "公示地価（自動取得）",
+      how: "「公的データ取得」実行時、座標から最寄りの地価公示ポイントを距離計算で特定（不動産情報ライブラリ）。",
+      values: enrichment?.landPrice?.koujiPerSqm
+        ? `${yen(enrichment.landPrice.koujiPerSqm)}/㎡（${enrichment.landPrice.pointName ?? "最寄地点"}・約${enrichment.landPrice.distanceM}m）`
+        : "未取得（資産価値タブの「公的データ取得」で取得）",
+    },
+    {
+      item: "周辺成約事例",
+      how: "住所→国土地理院ジオコーダ→市区町村コード→国交省 取引価格情報API（直近約6四半期）。土地のみ/土地建物/区分に分類し中央値で集計。",
+      values: market
+        ? `${market.analysis.municipality ?? "—"} / ${(market.scope?.periods ?? []).join(",")} / 土地${market.analysis.land?.count ?? 0}件・一体${market.analysis.landBldg?.count ?? 0}件・区分${market.analysis.condo?.count ?? 0}件${market.source !== "reinfolib" ? "（⚠デモ）" : ""}`
+        : "未取得",
+    },
+    {
+      item: "適正市場価格",
+      how: "事例分類の優先順で推定: ①土地事例単価×土地面積＋建物積算 ②土地建物一体単価×土地面積 ③区分専有単価×延床。3件未満の分類は使わない。",
+      values: fairValue ? fairValue.formula : "未算出",
+    },
+    {
+      item: "ハザード判定",
+      how: "座標から国土地理院ハザードタイルの該当ピクセル色を読取り、凡例色と照合（洪水/津波/土砂）。簡易判定のため正式には自治体ハザードマップを確認。",
+      values: enrichment?.hazard ? enrichment.hazard.summary : "未取得",
+    },
+  ];
+  return (
+    <Card title="🔍 計算方法とデータソース（透明性）">
+      <div className="space-y-2">
+        {rows.map((r) => (
+          <details key={r.item} className="rounded-md border border-base-700 bg-base-900/60 px-3 py-2">
+            <summary className="cursor-pointer flex items-baseline justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-200">{r.item}</span>
+              <span className="text-[11px] text-slate-400 tnum truncate max-w-[60%]">{r.values}</span>
+            </summary>
+            <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">{r.how}</p>
+            <p className="text-[11px] text-slate-300 mt-1 tnum">使用値: {r.values}</p>
+          </details>
+        ))}
+      </div>
+      <p className="text-[10px] text-slate-500 mt-3">
+        ※ 各数値はクリックで根拠を展開できます。出典: 国税庁路線価・国交省不動産情報ライブラリ・国土地理院。
+        本ツールは簡易シミュレーションであり、最終判断は専門家にご確認ください。
+      </p>
+    </Card>
+  );
+}
+
 // ===================== Asset Tab =====================
 function AssetTab({
   cost,
@@ -873,6 +983,7 @@ function AssetTab({
   property,
   market,
   deviation,
+  fairValue,
   pref,
   setPref,
   loadMarket,
@@ -939,69 +1050,143 @@ function AssetTab({
 
       {/* マーケットアプローチ */}
       <Card
-        title="マーケットアプローチ（実勢価格・乖離率）"
+        title="マーケットアプローチ（周辺成約事例・乖離率）"
         right={
-          <div className="flex items-center gap-2 print:hidden">
-            <select
-              className="bg-base-900 border border-base-600 rounded-md px-2 py-1 text-xs"
-              value={pref}
-              onChange={(e) => setPref(e.target.value)}
-            >
-              {PREFECTURES.map((p: any) => (
-                <option key={p.code} value={p.code}>{p.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={loadMarket}
-              disabled={loadingMarket}
-              className="px-2.5 py-1 rounded-md text-xs font-semibold bg-accent/90 hover:bg-accent text-white disabled:opacity-50"
-            >
-              {loadingMarket ? "取得中…" : "周辺事例を取得"}
-            </button>
-          </div>
+          <button
+            onClick={loadMarket}
+            disabled={loadingMarket}
+            className="px-2.5 py-1 rounded-md text-xs font-semibold bg-accent/90 hover:bg-accent text-white disabled:opacity-50 print:hidden"
+          >
+            {loadingMarket ? "取得中…" : "📍 所在地の市区町村で事例取得"}
+          </button>
         }
       >
         {!market ? (
           <p className="text-sm text-slate-400 py-6 text-center">
-            「周辺事例を取得」で、不動産情報ライブラリの取引価格情報（成約事例）から適正市場価格と乖離率を算出します。
+            所在地（{property.address || "未入力"}）から市区町村を自動特定し、国交省「不動産情報ライブラリ」の
+            成約事例（直近約6四半期）を取引種別ごとに集計して、適正市場価格と乖離率を算出します。
             <br />
-            <span className="text-[11px] text-slate-500">※ APIキー未設定時はデモデータで動作確認できます。</span>
+            <span className="text-[11px] text-slate-500">
+              ※ 経路: 住所 → 国土地理院ジオコーダ → 市区町村コード → 取引価格情報API。キー未設定時はデモ表示。
+            </span>
           </p>
         ) : (
-          <div className="grid grid-cols-12 gap-4 items-center">
-            <div className="col-span-12 md:col-span-7 grid grid-cols-2 gap-3">
-              <Metric label="売出価格" value={yen(state2price(property))} />
-              <Metric label="推定適正市場価格" value={yen(market.stats.estimatedFairValue)} sub={`事例${market.stats.count}件・中央値${yen(market.stats.medianUnitPrice)}/㎡`} />
-              <Metric label="単価レンジ" value={`${man(market.stats.minUnitPrice)}〜${man(market.stats.maxUnitPrice)}万/㎡`} />
-              <Metric label="データソース" value={market.source === "reinfolib" ? "不動産情報ライブラリ" : "デモデータ"} />
-            </div>
-            {deviation && (
-              <div className="col-span-12 md:col-span-5">
-                <div
-                  className="rounded-lg p-4 border"
-                  style={{
-                    borderColor: deviation.verdict === "discount" ? "#2dd4a7" : deviation.verdict === "premium" ? "#f56c6c" : "#f5b14c",
-                    background: deviation.verdict === "discount" ? "#2dd4a722" : deviation.verdict === "premium" ? "#f56c6c22" : "#f5b14c22",
-                  }}
-                >
-                  <div className="text-[11px] text-slate-300">適正市場価格との乖離</div>
-                  <div className="tnum text-3xl font-bold" style={{ color: deviation.verdict === "discount" ? "#2dd4a7" : deviation.verdict === "premium" ? "#f56c6c" : "#f5b14c" }}>
-                    {signedPct(deviation.vsFairPct)}
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1">対 積算価格: {signedPct(deviation.vsCostPct)}</div>
-                  <p className="text-xs text-slate-200 mt-2 leading-relaxed">{deviation.message}</p>
-                </div>
+          <div className="space-y-3">
+            {/* デモデータ警告 */}
+            {market.source !== "reinfolib" && (
+              <div className="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                ⚠ <b>これはデモデータです（実在の相場ではありません）</b>。実データには
+                REINFOLIB_API_KEY の設定が必要です。
+                {market.fetchError ? ` 理由: ${market.fetchError}` : ""}
               </div>
             )}
+
+            {/* 取得範囲（計算根拠） */}
+            <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
+              <span>出典: {market.scope?.api}</span>
+              <span>対象: {market.analysis.municipality ?? market.scope?.muniHint ?? "—"}{market.scope?.muniCd ? `（コード ${market.scope.muniCd}）` : ""}</span>
+              <span>期間: {(market.scope?.periods ?? []).join(", ") || "—"}</span>
+              <span>全{market.analysis.totalCount}件</span>
+            </div>
+
+            {/* 分類別統計 */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {[
+                { label: "土地のみ（宅地(土地)）", s: market.analysis.land, unit: "円/㎡(土地)" },
+                { label: "土地と建物（一棟/戸建）", s: market.analysis.landBldg, unit: "円/㎡(土地按分)" },
+                { label: "中古マンション（区分）", s: market.analysis.condo, unit: "円/㎡(専有)" },
+              ].map(({ label, s, unit }) => (
+                <div key={label} className="rounded-md border border-base-600 bg-base-900 p-2.5">
+                  <div className="text-[11px] text-slate-400">{label}</div>
+                  {s ? (
+                    <>
+                      <div className="tnum text-lg font-semibold">{yen(s.medianUnitPrice)}<span className="text-[10px] text-slate-500">/㎡ 中央値</span></div>
+                      <div className="text-[10px] text-slate-500 tnum">
+                        {s.count}件 · {man(s.minUnitPrice)}〜{man(s.maxUnitPrice)}万{unit.includes("専有") ? "(専有)" : ""}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-slate-500 py-1">事例なし</div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* 適正価格と乖離 */}
+            <div className="grid grid-cols-12 gap-4 items-stretch">
+              <div className="col-span-12 md:col-span-7 space-y-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <Metric label="売出価格" value={yen(property.price)} />
+                  <Metric
+                    label="推定適正市場価格"
+                    value={fairValue && fairValue.fairValue > 0 ? yen(fairValue.fairValue) : "推定不可"}
+                  />
+                </div>
+                {fairValue && (
+                  <div className="rounded-md bg-base-900 border border-base-600 p-2.5">
+                    <div className="text-[10px] text-slate-500 mb-0.5">計算式（根拠）</div>
+                    <div className="text-[11px] text-slate-300 leading-relaxed">{fairValue.formula}</div>
+                  </div>
+                )}
+              </div>
+              {deviation && (
+                <div className="col-span-12 md:col-span-5">
+                  <div
+                    className="rounded-lg p-4 border h-full"
+                    style={{
+                      borderColor: deviation.verdict === "discount" ? "#2dd4a7" : deviation.verdict === "premium" ? "#f56c6c" : "#f5b14c",
+                      background: deviation.verdict === "discount" ? "#2dd4a722" : deviation.verdict === "premium" ? "#f56c6c22" : "#f5b14c22",
+                    }}
+                  >
+                    <div className="text-[11px] text-slate-300">適正市場価格との乖離</div>
+                    <div className="tnum text-3xl font-bold" style={{ color: deviation.verdict === "discount" ? "#2dd4a7" : deviation.verdict === "premium" ? "#f56c6c" : "#f5b14c" }}>
+                      {signedPct(deviation.vsFairPct)}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-1">対 積算価格: {signedPct(deviation.vsCostPct)}</div>
+                    <p className="text-xs text-slate-200 mt-2 leading-relaxed">{deviation.message}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 代表事例（中央値近傍） */}
+            {(market.analysis.land?.samples?.length || market.analysis.landBldg?.samples?.length) ? (
+              <details className="rounded-md border border-base-700 bg-base-900/60 p-2.5">
+                <summary className="text-[11px] text-slate-400 cursor-pointer">代表事例を表示（相場中央値に近い成約）</summary>
+                <table className="w-full text-[11px] tnum mt-2">
+                  <thead>
+                    <tr className="text-slate-500 border-b border-base-700">
+                      <th className="text-left py-1">種別</th>
+                      <th className="text-left py-1">地区</th>
+                      <th className="text-right py-1">総額</th>
+                      <th className="text-right py-1">面積</th>
+                      <th className="text-right py-1">単価</th>
+                      <th className="text-right py-1">時期</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...(market.analysis.land?.samples ?? []), ...(market.analysis.landBldg?.samples ?? []), ...(market.analysis.condo?.samples ?? [])].slice(0, 9).map((r: any, i: number) => (
+                      <tr key={i} className="border-b border-base-800">
+                        <td className="py-1 text-slate-300">{r.type ?? "—"}</td>
+                        <td className="py-1 text-slate-400">{r.district ?? r.station ?? "—"}</td>
+                        <td className="py-1 text-right">{yen(r.price)}</td>
+                        <td className="py-1 text-right">{r.area ?? "—"}㎡</td>
+                        <td className="py-1 text-right">{r.unitPrice ? yen(r.unitPrice) : r.area ? yen(Math.round(r.price / r.area)) : "—"}/㎡</td>
+                        <td className="py-1 text-right text-slate-500">{r.period ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            ) : null}
           </div>
         )}
       </Card>
+
+      {/* 透明性: 計算方法とデータソース */}
+      <MethodologyPanel cost={cost} property={property} market={market} enrichment={enrichment} fairValue={fairValue} />
     </>
   );
-}
-
-function state2price(p: any) {
-  return p.price;
 }
 
 // ===================== Income Tab =====================

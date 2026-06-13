@@ -34,6 +34,36 @@ export async function geocodeGSI(address: string): Promise<GeocodeResult | null>
   };
 }
 
+export interface MuniInfo {
+  /** 市区町村コード（5桁、例: "13102"=東京都中央区） */
+  muniCd: string;
+  /** 都道府県コード（2桁） */
+  prefCd: string;
+  /** 大字・町名（GSIが返す参考表記） */
+  lv01Nm?: string;
+}
+
+/**
+ * 国土地理院 逆ジオコーダ（キー不要）。
+ * 緯度経度 → 市区町村コード。周辺事例の市区町村絞り込みに使用。
+ */
+export async function reverseGeocodeMuni(lat: number, lon: number): Promise<MuniInfo | null> {
+  const url = `https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": "fudosan-pro/1.0 (+real-estate-analysis)" },
+    next: { revalidate: 86400 },
+  });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  const muniCd = data?.results?.muniCd ? String(data.results.muniCd) : null;
+  if (!muniCd || muniCd.length < 5) return null;
+  return {
+    muniCd: muniCd.slice(0, 5),
+    prefCd: muniCd.slice(0, 2),
+    lv01Nm: data?.results?.lv01Nm,
+  };
+}
+
 export interface TilePixel {
   z: number;
   x: number;

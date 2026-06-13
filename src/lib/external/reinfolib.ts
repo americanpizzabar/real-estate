@@ -26,10 +26,14 @@ export interface TransactionRecord {
   period?: string;
   /** 用途（住宅地/商業地など） */
   use?: string;
+  /** 取引の種類（宅地(土地)/宅地(土地と建物)/中古マンション等） */
+  type?: string;
   /** 建物構造 */
   structure?: string;
   /** 市区町村 */
   municipality?: string;
+  /** 地区名（駅名・大字） */
+  district?: string;
 }
 
 export interface LandPricePoint {
@@ -93,10 +97,49 @@ export async function fetchTransactions(
     area: d.Area ? Number(d.Area) : undefined,
     station: d.NearestStation,
     period: d.Period,
-    use: d.Use,
+    use: d.Use ?? d.Region,
+    type: d.Type,
     structure: d.Structure,
     municipality: d.Municipality,
+    district: d.DistrictName,
   }));
+}
+
+/**
+ * 直近の複数四半期をまとめて取得する（市区町村レベル）。
+ * データ公開は四半期遅れのため、前年4Q＋当年分を対象に並行取得し、
+ * 失敗した四半期は無視して結合する。
+ * @returns records と 実際に取得できた期間ラベル
+ */
+export async function fetchRecentTransactions(
+  area: string,
+  city: string | undefined,
+  now = new Date()
+): Promise<{ records: TransactionRecord[]; periods: string[] }> {
+  const y = now.getFullYear();
+  const targets: { year: number; quarter: number }[] = [
+    { year: y - 1, quarter: 1 },
+    { year: y - 1, quarter: 2 },
+    { year: y - 1, quarter: 3 },
+    { year: y - 1, quarter: 4 },
+    { year: y, quarter: 1 },
+    { year: y, quarter: 2 },
+  ];
+  const results = await Promise.all(
+    targets.map((t) =>
+      fetchTransactions(area, t.year, t.quarter, city)
+        .then((records) => ({ t, records }))
+        .catch(() => null)
+    )
+  );
+  const records: TransactionRecord[] = [];
+  const periods: string[] = [];
+  for (const r of results) {
+    if (!r || r.records.length === 0) continue;
+    records.push(...r.records);
+    periods.push(`${r.t.year}年Q${r.t.quarter}`);
+  }
+  return { records, periods };
 }
 
 /**

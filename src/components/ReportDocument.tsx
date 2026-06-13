@@ -26,7 +26,13 @@ export interface ReportData {
   rows: CashflowYearRow[];
   initialCosts: InitialCosts;
   dscrLabel: string;
-  market: { stats: { estimatedFairValue: number; medianUnitPrice: number; count: number }; source: string } | null;
+  market: {
+    source: string;
+    municipality: string | null;
+    periods: string[];
+    counts: string;
+  } | null;
+  fairValue: { fairValue: number; formula: string } | null;
   deviation: { vsFairPct: number; vsCostPct: number; message: string } | null;
   enrichment: Enrichment | null;
   extras: CatalogExtras;
@@ -130,13 +136,20 @@ export function ReportDocument({ data, className = "" }: { data: ReportData; cla
         <div className="report-cols">
           {data.deviation && data.market && (
             <Section title="周辺相場（マーケットアプローチ）">
-              <Row k="推定適正市場価格" v={yenExact(data.market.stats.estimatedFairValue)} />
-              <Row k="単価中央値" v={`${yen(data.market.stats.medianUnitPrice)}/㎡`} />
+              {data.fairValue && data.fairValue.fairValue > 0 && (
+                <Row k="推定適正市場価格" v={yenExact(data.fairValue.fairValue)} />
+              )}
               <Row k="対 適正価格 乖離" v={signedPct(data.deviation.vsFairPct)} strong />
               <Row k="対 積算価格 乖離" v={signedPct(data.deviation.vsCostPct)} />
               <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>{data.deviation.message}</div>
+              {data.fairValue && (
+                <div style={{ fontSize: 9, color: "#777", marginTop: 3 }}>算定式: {data.fairValue.formula}</div>
+              )}
               <div style={{ fontSize: 9, color: "#999", marginTop: 2 }}>
-                出典: {data.market.source === "reinfolib" ? "不動産情報ライブラリ（取引価格情報）" : "デモデータ"}・事例{data.market.stats.count}件
+                出典: {data.market.source === "reinfolib"
+                  ? `不動産情報ライブラリ 取引価格情報（${data.market.municipality ?? ""}・${data.market.periods.join(",")}）`
+                  : "デモデータ（参考値・実相場ではありません）"}
+                ・{data.market.counts}
               </div>
             </Section>
           )}
