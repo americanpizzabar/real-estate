@@ -1,4 +1,5 @@
 import type { PropertyInput, StructureType } from "@/lib/calc/types";
+import { cleanAddress } from "./extraction";
 
 // =============================================================
 // マイソク（物件概要書）テキストからの項目抽出
@@ -92,10 +93,11 @@ export function parseMaisoku(text: string): ParsedMaisoku {
     notes.push(`表面利回り: ${out.grossYieldPct}%`);
   }
 
-  // 住所
+  // 住所（物件情報の混入を除去）
   const addr = text.match(/(?:所在地|住所)[：:\s]*([^\n]+)/);
   if (addr) {
-    out.address = addr[1].trim().slice(0, 60);
+    const a = cleanAddress(addr[1]);
+    if (a) out.address = a;
   }
 
   // 路線価

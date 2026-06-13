@@ -4,6 +4,8 @@
 // ハザードタイルのピクセル参照に使うタイル/ピクセル座標も算出する。
 // =============================================================
 
+import { cleanAddress } from "./extraction";
+
 export interface GeocodeResult {
   lat: number;
   lon: number;
@@ -13,15 +15,23 @@ export interface GeocodeResult {
 
 /** GSI住所検索。最も確からしい1件を返す。失敗時null。 */
 export async function geocodeGSI(address: string): Promise<GeocodeResult | null> {
-  const url = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(
-    address
-  )}`;
+  const q = cleanAddress(address);
+  if (!q) return null;
+  const url = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(q)}`;
   const res = await fetch(url, {
     headers: { "User-Agent": "fudosan-pro/1.0 (+real-estate-analysis)" },
     next: { revalidate: 86400 },
   });
   if (!res.ok) throw new Error(`gsi geocode ${res.status}`);
-  const data = (await res.json()) as any[];
+  // 空レスポンス/非JSONでも例外にしない（「Unexpected end of JSON input」対策）
+  const body = (await res.text()).trim();
+  if (!body) return null;
+  let data: any;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    return null;
+  }
   if (!Array.isArray(data) || data.length === 0) return null;
   // GSIは候補を返す。最初（最もマッチ度が高い）を採用。
   const best = data[0];

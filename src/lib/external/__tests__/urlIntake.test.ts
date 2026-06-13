@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { parseHtml } from "../urlIntake";
+import { cleanAddress } from "../extraction";
+
+describe("cleanAddress（住所クレンジング）", () => {
+  it("物件情報の混入を除去", () => {
+    expect(cleanAddress("東京都港区六本木3-2-1 価格: 9800万円 専有面積54.32㎡")).toBe("東京都港区六本木3-2-1");
+  });
+  it("先頭の余計な語を落として都道府県起点に", () => {
+    expect(cleanAddress("所在地 東京都中央区日本橋1-1-1 交通 東京駅徒歩5分")).toBe("東京都中央区日本橋1-1-1");
+  });
+  it("面積・利回り表記の手前で切る", () => {
+    expect(cleanAddress("神奈川県横浜市西区みなとみらい4-3 土地面積120㎡ 利回り7%")).toBe("神奈川県横浜市西区みなとみらい4-3");
+  });
+  it("空や無効はそのまま空に近い処理", () => {
+    expect(cleanAddress("")).toBe("");
+  });
+});
 
 const SAMPLE_HTML = `
 <html><head>

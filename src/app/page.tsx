@@ -1042,8 +1042,15 @@ function AssetTab({
                 {stance.label}
               </span>
             </div>
-            <Bar value={cost.landValueRatio * 100} max={100} color={stance.color} />
-            <p className="text-xs text-slate-300 leading-relaxed">{stance.message}</p>
+            <Bar value={Math.min(100, cost.landValueRatio * 100)} max={100} color={stance.color} />
+            {cost.landValueRatio > 1.5 ? (
+              <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-300 leading-relaxed">
+                ⚠ 土地値比率が異常に高い値です。<b>路線価・物件価格・土地面積</b>の入力をご確認ください
+                （路線価は「円/㎡」単位。万円や総額を入れていないか、桁ズレがないか）。
+              </div>
+            ) : (
+              <p className="text-xs text-slate-300 leading-relaxed">{stance.message}</p>
+            )}
           </div>
         </Card>
       </div>

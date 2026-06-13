@@ -111,6 +111,12 @@ export function normalizeExtraction(raw: string): ExtractionResult {
   }
   // fields が直下に展開されているケースにも対応
   const fields: ExtractedFields = obj.fields ?? pickFields(obj);
+  // 住所欄に物件情報が混入するケースを除去（特にSPA本文の一行化テキスト由来）
+  if (fields.address) {
+    const cleaned = cleanAddress(fields.address);
+    if (cleaned) fields.address = cleaned;
+    else delete fields.address;
+  }
   const evidence: FieldEvidence[] = Array.isArray(obj.evidence)
     ? obj.evidence
         .filter((e: any) => e && e.field)
@@ -121,6 +127,25 @@ export function normalizeExtraction(raw: string): ExtractionResult {
         }))
     : [];
   return { fields: coerceNumbers(fields), evidence, notes };
+}
+
+/**
+ * 住所文字列から物件情報の混入を除去し、ジオコーディング可能な住所に整える。
+ * 例: 「東京都港区六本木3-2-1 価格: 9800万円 専有面積54.32㎡」→「東京都港区六本木3-2-1」
+ */
+export function cleanAddress(raw: string): string {
+  if (!raw) return "";
+  let s = String(raw).replace(/\s+/g, " ").trim();
+  // 都道府県以降を起点にする（先頭の余計な語を落とす）
+  const pref = s.match(/(東京都|北海道|(?:京都|大阪)府|[^\s0-9]{2,3}県)/);
+  if (pref && pref.index && pref.index > 0) s = s.slice(pref.index);
+  // 物件情報を示すキーワード以降を切り捨てる
+  s = s.split(
+    /価格|販売価格|物件価格|売出価格|面積|土地面積|建物面積|延床|専有面積|間取|利回|表面利回|沿線|交通|最寄|築年|築年月|構造|総戸数|階建|m2|ｍ2|㎡|円|万円|JR|私鉄/
+  )[0];
+  // 末尾の区切り記号を除去、長すぎる場合は切り詰め
+  s = s.trim().replace(/[ \t,，、。･・:：;；-]+$/u, "");
+  return s.slice(0, 50).trim();
 }
 
 const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof ExtractedFields)[];
