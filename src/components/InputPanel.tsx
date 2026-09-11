@@ -96,6 +96,9 @@ export function InputPanel({
             <NumberField label="築年（西暦）" value={p.builtYear} onChange={(v) => setProp({ builtYear: v })} />
             <NumberField label="路線価" suffix="円/㎡" step={10_000} value={p.rosenkaPerSqm} onChange={(v) => setProp({ rosenkaPerSqm: v })} />
           </div>
+          <p className="text-[10px] text-slate-500 -mt-1">
+            ※ 路線価図の表示は「千円/㎡」単位です。例: 図に「300」→ ここには <b>300,000</b> と入力（×1,000）。
+          </p>
           <NumberField label="公示地価/基準地価" suffix="円/㎡" step={10_000} value={p.koujiPerSqm} onChange={(v) => setProp({ koujiPerSqm: v })} />
         </div>
       </Section>

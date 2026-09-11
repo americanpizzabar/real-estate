@@ -65,8 +65,10 @@ export async function reverseGeocodeMuni(lat: number, lon: number): Promise<Muni
   });
   if (!res.ok) return null;
   const data = await res.json().catch(() => null);
-  const muniCd = data?.results?.muniCd ? String(data.results.muniCd) : null;
-  if (!muniCd || muniCd.length < 5) return null;
+  // muniCd が数値で返る場合、先頭0が落ちる（北海道01/東北等）→ 5桁ゼロ埋め
+  const rawMuni = data?.results?.muniCd;
+  const muniCd = rawMuni != null && rawMuni !== "" ? String(rawMuni).padStart(5, "0") : null;
+  if (!muniCd || muniCd.length !== 5) return null;
   return {
     muniCd: muniCd.slice(0, 5),
     prefCd: muniCd.slice(0, 2),

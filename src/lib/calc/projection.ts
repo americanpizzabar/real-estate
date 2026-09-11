@@ -97,10 +97,12 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
   const annualDepreciation = Math.round(depBasis / depYears);
 
   const rows: CashflowYearRow[] = [];
-  let cumulativeBtcf = -selfFunds; // 自己資金回収の起点
+  let cumulativeBtcf = -selfFunds; // 表示用の税引前累積CF（起点=自己資金）
+  let cumulativeAtcf = -selfFunds; // 元本回収判定は税引後で行う（IRRと基準を揃える）
   let firstNoi = 0;
   let paybackYear: number | null = null;
   let deadCrossYear: number | null = null;
+  let accumDepreciation = 0; // 減価償却累計（売却時の譲渡所得の取得費調整に使用）
 
   // IRR/NPV 用のキャッシュフロー列（0年目 = -自己資金）
   const cashflows: number[] = [-selfFunds];
@@ -131,6 +133,7 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
 
     // --- 減価償却 ---
     const depreciation = y <= depYears ? annualDepreciation : 0;
+    accumDepreciation += depreciation;
 
     // --- 税 ---
     const taxableIncome = inc.noi - interest - depreciation;
@@ -140,13 +143,14 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
     const btcf = inc.noi - debtService;
     const atcf = btcf - tax;
     cumulativeBtcf += btcf;
+    cumulativeAtcf += atcf;
 
-    // デッドクロス: 減価償却 < 元金返済（帳簿黒字だが手残り薄）
-    const isDeadCross = depreciation < principal && y > 1;
+    // デッドクロス: 減価償却 < 元金返済（帳簿黒字だが手残り薄）。初年度から判定。
+    const isDeadCross = depreciation < principal;
     if (isDeadCross && deadCrossYear === null) deadCrossYear = y;
 
-    // 元本回収（累積CFが初めてプラス）
-    if (paybackYear === null && cumulativeBtcf >= 0) paybackYear = y;
+    // 元本回収（自己資金回収）: 税引後の累積CFが初めてプラスに転じた年
+    if (paybackYear === null && cumulativeAtcf >= 0) paybackYear = y;
 
     rows.push({
       year: y,
@@ -183,9 +187,20 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
     }
     // 売却コスト（仲介3%+譲渡諸費の概算5%）
     const sellingCost = Math.round(salePrice * 0.05);
-    const netSaleProceeds = salePrice - sellingCost - exitRow.loanBalance;
 
-    // exitYear のキャッシュフローに売却益を加算した列でIRR/NPV
+    // 譲渡所得税（分離課税）: 譲渡益 = 売却価格 − 譲渡費用 − 取得費
+    // 取得費 = 物件価格 + 購入諸経費 − 減価償却累計（償却分は取得費から減算＝実質リキャプチャ）
+    const acquisitionCost = p.price + input.initialCostsTotal - accumDepreciation;
+    const capitalGain = Math.max(0, salePrice - sellingCost - acquisitionCost);
+    // 保有期間で長期/短期を判定（譲渡の年の1/1時点で5年超なら長期20.315%、以下は短期39.63%）
+    const longTerm = exitYear > 5;
+    const cgTaxRate = longTerm ? 0.20315 : 0.3963;
+    const capitalGainsTax = Math.round(capitalGain * cgTaxRate);
+
+    const netSaleProceeds = salePrice - sellingCost - exitRow.loanBalance - capitalGainsTax;
+
+    // exitYear のキャッシュフローに税引後の売却手取りを加算した列でIRR/NPV
+    // （運用CFは税引後ATCF、出口も税引後で基準を統一）
     const exitFlows = cashflows.slice(0, exitYear + 1);
     exitFlows[exitYear] = (exitFlows[exitYear] ?? 0) + netSaleProceeds;
     irrPct = (() => {
@@ -203,7 +218,9 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
         ? input.minpaku.adr * input.minpaku.operableDays
         : 0;
   const grossYieldPct = p.price > 0 ? (grossBase / p.price) * 100 : 0;
-  const netYieldPct = p.price > 0 ? (firstNoi / p.price) * 100 : 0;
+  // 実質利回りは購入諸経費込みの総投資額を分母にする（NOI / (価格 + 諸経費)）
+  const totalAcquisition = p.price + input.initialCostsTotal;
+  const netYieldPct = totalAcquisition > 0 ? (firstNoi / totalAcquisition) * 100 : 0;
   const ds = annualDebtService(loan);
   const dscr = ds > 0 ? firstNoi / ds : Infinity;
   const firstBtcf = rows.length > 0 ? rows[0].btcf : 0;

@@ -54,7 +54,8 @@ import {
   getMode,
 } from "@/lib/catalogStore";
 
-const CURRENT_YEAR = 2026;
+// 評価基準年（築年数・減価償却の起点）。実行時の年を用いる。
+const CURRENT_YEAR = new Date().getFullYear();
 
 // Leafletはwindow依存のためSSR無効でクライアント読み込み
 const PropertyMap = dynamic(() => import("@/components/PropertyMap"), {
@@ -474,6 +475,9 @@ export default function Home() {
                 stance={stance}
                 score={score}
                 property={state.property}
+                metrics={proj.metrics}
+                dscrJudge={dscrJudge}
+                mode={mode}
                 market={market}
                 deviation={deviation}
                 fairValue={fairValue}
@@ -975,6 +979,47 @@ function MethodologyPanel({ cost, property, market, enrichment, fairValue }: any
   );
 }
 
+// ===================== 一撃サマリKPIストリップ =====================
+function HeadlineKPIs({ property, cost, stance, score, metrics, dscrJudge, mode }: any) {
+  const gradeColor =
+    score.grade === "S" || score.grade === "A" ? "#2dd4a7" : score.grade === "B" ? "#f5b14c" : "#f56c6c";
+  const items = [
+    { label: "物件価格", value: yen(property.price), color: undefined as string | undefined, sub: undefined as string | undefined },
+    { label: "表面利回り", value: pct(metrics.grossYieldPct), color: undefined, sub: mode === "minpaku" ? "民泊" : "賃貸" },
+    { label: "実質利回り", value: pct(metrics.netYieldPct), color: "#4f9cf9", sub: "NOIベース" },
+    { label: "土地値比率", value: pct(Math.min(999, cost.landValueRatio * 100), 0), color: stance.color, sub: stance.label },
+    { label: "DSCR", value: isFinite(metrics.dscr) ? metrics.dscr.toFixed(2) : "—", color: dscrJudge.color, sub: dscrJudge.label },
+  ];
+  return (
+    <div className="card p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-center">
+      {items.map((it) => (
+        <div key={it.label} className="min-w-0">
+          <div className="text-[10px] text-slate-400 truncate">{it.label}</div>
+          <div className="tnum text-xl font-bold leading-tight truncate" style={it.color ? { color: it.color } : undefined}>
+            {it.value}
+          </div>
+          {it.sub && <div className="text-[10px] text-slate-500 truncate">{it.sub}</div>}
+        </div>
+      ))}
+      {/* 総合スコア */}
+      <div className="flex items-center gap-2 justify-start lg:justify-end">
+        <div className="text-right">
+          <div className="text-[10px] text-slate-400">総合スコア</div>
+          <div className="tnum text-2xl font-extrabold leading-none" style={{ color: gradeColor }}>
+            {score.total}
+          </div>
+        </div>
+        <span
+          className="text-sm font-bold px-2 py-0.5 rounded"
+          style={{ color: gradeColor, border: `1px solid ${gradeColor}` }}
+        >
+          {score.grade}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ===================== Asset Tab =====================
 function AssetTab({
   cost,
@@ -984,6 +1029,9 @@ function AssetTab({
   market,
   deviation,
   fairValue,
+  metrics,
+  dscrJudge,
+  mode,
   pref,
   setPref,
   loadMarket,
@@ -1000,12 +1048,18 @@ function AssetTab({
       {showOnboarding && (
         <OnboardingHero onIntake={onIntake} dismiss={dismissOnboarding} />
       )}
-      <EnrichPanel
-        enrichment={enrichment}
-        runEnrich={runEnrich}
-        enriching={enriching}
-        address={property.address}
+
+      {/* 一撃サマリ：1画面で重要指標がすべてわかる */}
+      <HeadlineKPIs
+        property={property}
+        cost={cost}
+        stance={stance}
+        score={score}
+        metrics={metrics}
+        dscrJudge={dscrJudge}
+        mode={mode}
       />
+
       <div className="grid grid-cols-12 gap-4">
         {/* スコア */}
         <Card title="一撃判定スコア" className="col-span-12 md:col-span-4">
@@ -1054,6 +1108,14 @@ function AssetTab({
           </div>
         </Card>
       </div>
+
+      {/* 公的データ自動紐付け（住所→座標→用途地域・地価・ハザード） */}
+      <EnrichPanel
+        enrichment={enrichment}
+        runEnrich={runEnrich}
+        enriching={enriching}
+        address={property.address}
+      />
 
       {/* マーケットアプローチ */}
       <Card
@@ -1245,6 +1307,11 @@ function IncomeTab({
           <Metric label="デッドクロス" value={m.deadCrossYear ? `${m.deadCrossYear}年目` : "なし"} color={m.deadCrossYear ? "#f56c6c" : "#2dd4a7"} />
           <Metric label="初期費用合計" value={yen(initialCosts.total)} sub={mode === "minpaku" ? "家具家電・申請含む" : undefined} />
         </div>
+        <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+          ※ 算定基準: 実質利回り＝NOI÷(物件価格＋購入諸経費)。IRR/NPV・元本回収は<b>税引後</b>（所得税は
+          NOI−支払利息−減価償却に実効税率、出口は譲渡所得税〔5年超20.315%／以内39.63%〕・減価償却リキャプチャを控除）。
+          DSCR＝NOI÷年間返済額。デッドクロス＝減価償却＜元金返済。
+        </p>
       </Card>
 
       <div className="grid grid-cols-12 gap-4">

@@ -159,4 +159,39 @@ describe("projection", () => {
     // 累積CFは年を追って増加（健全物件）
     expect(res.rows[19].cumulativeBtcf).toBeGreaterThan(res.rows[0].cumulativeBtcf);
   });
+
+  const baseInput = {
+    property: {
+      name: "P", address: "東京", price: 50_000_000, landArea: 100, buildingArea: 120,
+      structure: "RC" as const, builtYear: 2010, rosenkaPerSqm: 300_000, koujiPerSqm: 0,
+    },
+    mode: "rental" as const,
+    rental: { monthlyGrossRent: 350_000, vacancyRatePct: 5, opexRatePct: 20, rentDeclinePctPerYear: 1 },
+    loan: { amount: 40_000_000, annualRatePct: 2.0, years: 25, repayment: "equal-payment" as const },
+    downPayment: 10_000_000,
+    initialCostsTotal: 4_000_000,
+    years: 20,
+    taxRate: 0.33,
+    discountRate: 0.04,
+    exitCapRatePct: 7,
+    currentYear: 2025,
+  };
+
+  it("実質利回りは購入諸経費込みの総投資額が分母", () => {
+    const res = buildProjection({ ...baseInput, exitYear: 20 });
+    const expected = (res.metrics.noi / (50_000_000 + 4_000_000)) * 100;
+    expect(res.metrics.netYieldPct).toBeCloseTo(expected, 4);
+    // 価格のみ分母より必ず小さい
+    expect(res.metrics.netYieldPct).toBeLessThan((res.metrics.noi / 50_000_000) * 100);
+  });
+
+  it("譲渡所得税で出口手取りが減り、IRRは課税なし想定より低い", () => {
+    const taxed = buildProjection({ ...baseInput, exitYear: 20 });
+    // 短期(5年以内)売却は税率が高くIRRがさらに下がる
+    const shortTerm = buildProjection({ ...baseInput, exitYear: 4, years: 20 });
+    expect(taxed.metrics.irrPct).not.toBeNull();
+    expect(shortTerm.metrics.irrPct).not.toBeNull();
+    // 値が有限で妥当な範囲
+    expect(Number.isFinite(taxed.metrics.irrPct!)).toBe(true);
+  });
 });

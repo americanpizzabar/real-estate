@@ -15,6 +15,13 @@ describe("cleanAddress（住所クレンジング）", () => {
   it("空や無効はそのまま空に近い処理", () => {
     expect(cleanAddress("")).toBe("");
   });
+  it("「円」を含む地名を切らない（円山町・円町）", () => {
+    expect(cleanAddress("東京都渋谷区円山町5-1")).toBe("東京都渋谷区円山町5-1");
+    expect(cleanAddress("京都府京都市中京区円町10")).toBe("京都府京都市中京区円町10");
+  });
+  it("数字＋万円（価格）は正しく切る", () => {
+    expect(cleanAddress("東京都新宿区西新宿2-8-1 8,000万円")).toBe("東京都新宿区西新宿2-8-1");
+  });
 });
 
 const SAMPLE_HTML = `

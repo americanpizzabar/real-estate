@@ -76,14 +76,19 @@ export function parseMaisoku(text: string): ParsedMaisoku {
     }
   }
 
-  // 築年
-  const builtWa = text.match(/(?:築年月|建築年月|新築)[：:\s]*(?:昭和|平成|令和)?\s*([0-9]{4})?年?/);
-  const builtYear = text.match(/([12][0-9]{3})\s*年(?:築|建築)/);
+  // 築年（西暦・和暦の両対応）
+  const builtYear = text.match(/([12][0-9]{3})\s*年(?:築|建築|新築)?/);
+  const builtWa = text.match(/(昭和|平成|令和)\s*([0-9]{1,2}|元)\s*年/);
   if (builtYear) {
     out.builtYear = toNum(builtYear[1]);
     notes.push(`築年: ${out.builtYear}`);
-  } else if (builtWa?.[1]) {
-    out.builtYear = toNum(builtWa[1]);
+  } else if (builtWa) {
+    const eraBase: Record<string, number> = { 昭和: 1925, 平成: 1988, 令和: 2018 };
+    const n = builtWa[2] === "元" ? 1 : toNum(builtWa[2]) ?? 0;
+    if (n > 0) {
+      out.builtYear = eraBase[builtWa[1]] + n;
+      notes.push(`築年(和暦): ${builtWa[1]}${builtWa[2]}年 → ${out.builtYear}`);
+    }
   }
 
   // 利回り
@@ -100,12 +105,14 @@ export function parseMaisoku(text: string): ParsedMaisoku {
     if (a) out.address = a;
   }
 
-  // 路線価
-  const rosen = text.match(new RegExp(`路線価[：:\\s]*${NUM}`));
+  // 路線価（単位ラベルがある時のみ千円→円換算。magnitudeだけで推測しない）
+  const rosen = text.match(new RegExp(`路線価[：:\\s]*${NUM}\\s*(千円|万円|円)?`));
   if (rosen) {
     let v = toNum(rosen[1]) ?? 0;
-    // 路線価図は千円/㎡表記が多い。1000未満なら千円単位とみなす。
-    if (v > 0 && v < 10000) v *= 1000;
+    const unit = rosen[2];
+    if (unit === "千円") v *= 1000;
+    else if (unit === "万円") v *= 10000;
+    // 単位ラベルが無い場合は入力値をそのまま円/㎡として採用（誤変換を避ける）
     out.rosenkaPerSqm = v;
   }
 

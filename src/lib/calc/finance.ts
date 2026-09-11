@@ -9,7 +9,7 @@ export function npv(rate: number, flows: number[]): number {
 }
 
 /**
- * 内部収益率（IRR）。二分法 + ニュートン法のハイブリッドで頑健に解く。
+ * 内部収益率（IRR）。符号反転区間を探索し二分法で頑健に解く。
  * 解が存在しない（全て同符号等）場合は null。
  */
 export function irr(flows: number[], guess = 0.1): number | null {

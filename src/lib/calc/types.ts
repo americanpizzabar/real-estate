@@ -125,7 +125,7 @@ export interface RentalParams {
   monthlyGrossRent: number;
   /** 空室率（%） */
   vacancyRatePct: number;
-  /** 運営費率（対GPI、%）。管理費・修繕積立等の簡易合算。詳細項目があれば opex を使用。 */
+  /** 運営費率（対EGI＝実効総収入、%）。管理費・修繕積立等の簡易合算。詳細項目があれば opexAnnual を使用。 */
   opexRatePct: number;
   /** 詳細運営費（円/年）。指定時は opexRatePct より優先。 */
   opexAnnual?: number;

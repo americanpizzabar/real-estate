@@ -49,7 +49,7 @@ export function computeScore(
   // 収益性: 実質利回り 8%で満点、4%で50点
   const profitability = clamp((metrics.netYieldPct / 8) * 100);
 
-  // 融資妥当性: DSCR 1.5で満点、1.0で33点
+  // 融資妥当性: DSCR 1.5で満点、0.8で0点（1.0で約29点）
   const dscr = isFinite(metrics.dscr) ? metrics.dscr : 2.0;
   const financeability = clamp(((dscr - 0.8) / (1.5 - 0.8)) * 100);
 

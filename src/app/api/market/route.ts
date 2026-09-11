@@ -70,6 +70,8 @@ export async function GET(req: NextRequest) {
       records = r.records;
       periods = r.periods;
       if (records.length > 0) source = "reinfolib";
+      else if (r.allFailed)
+        fetchError = `APIエラー（キー・接続を確認）: ${r.lastError ?? "全四半期で取得失敗"}`;
       else fetchError = "該当期間に事例が0件（市区町村を確認）";
     } catch (e: any) {
       fetchError = String(e?.message ?? e).slice(0, 120);
@@ -112,7 +114,7 @@ function syntheticRecords(area: string): TransactionRecord[] {
   };
   const base = baseByArea[area] ?? 350_000;
   const out: TransactionRecord[] = [];
-  const seed = (area.charCodeAt(0) || 13) * 7;
+  const seed = (parseInt(area, 10) || 13) * 7;
   const types = ["宅地(土地)", "宅地(土地と建物)", "中古マンション等"];
   for (let i = 0; i < 30; i++) {
     const r = Math.abs((Math.sin(seed + i * 12.9898) * 43758.5453) % 1);

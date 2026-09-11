@@ -115,7 +115,7 @@ export async function fetchRecentTransactions(
   area: string,
   city: string | undefined,
   now = new Date()
-): Promise<{ records: TransactionRecord[]; periods: string[] }> {
+): Promise<{ records: TransactionRecord[]; periods: string[]; allFailed: boolean; lastError: string | null }> {
   const y = now.getFullYear();
   const targets: { year: number; quarter: number }[] = [
     { year: y - 1, quarter: 1 },
@@ -128,18 +128,24 @@ export async function fetchRecentTransactions(
   const results = await Promise.all(
     targets.map((t) =>
       fetchTransactions(area, t.year, t.quarter, city)
-        .then((records) => ({ t, records }))
-        .catch(() => null)
+        .then((records) => ({ t, records, error: null as string | null }))
+        .catch((e) => ({ t, records: [] as TransactionRecord[], error: String(e?.message ?? e) }))
     )
   );
   const records: TransactionRecord[] = [];
   const periods: string[] = [];
+  let anySucceeded = false;
+  let lastError: string | null = null;
   for (const r of results) {
-    if (!r || r.records.length === 0) continue;
+    if (r.error) lastError = r.error;
+    else anySucceeded = true;
+    if (r.records.length === 0) continue;
     records.push(...r.records);
     periods.push(`${r.t.year}年Q${r.t.quarter}`);
   }
-  return { records, periods };
+  // 全四半期がエラー（キー不正・API障害）と「取得成功だが0件」を区別する
+  const allFailed = !anySucceeded;
+  return { records, periods, allFailed, lastError };
 }
 
 /**

@@ -79,16 +79,24 @@ export function calcInitialCosts(
   const { land, building } = estimateFixedAssetValues(p);
 
   const brokerage = brokerageFee(p.price);
+  // 登録免許税: 所有権移転（土地・建物）＋ 抵当権設定登記（融資額×0.4%）
   const registrationTax = Math.round(
-    land * REGISTRATION_TAX_RATE_LAND + building * REGISTRATION_TAX_RATE_BUILDING
+    land * REGISTRATION_TAX_RATE_LAND +
+      building * REGISTRATION_TAX_RATE_BUILDING +
+      opts.loanAmount * 0.004
   );
-  const acquisitionTax = Math.round((land + building) * ACQUISITION_TAX_RATE);
+  // 不動産取得税: 住宅用地は課税標準×1/2の特例を土地に適用（税率3%）
+  const acquisitionTax = Math.round(
+    (land * 0.5 + building) * ACQUISITION_TAX_RATE
+  );
 
   const loanFeeRate = (opts.loanFeeRatePct ?? 2.2) / 100;
   const loanFee = Math.round(opts.loanAmount * loanFeeRate);
 
   const insurance = opts.insurance ?? Math.round(p.buildingArea * 1_200); // 簡易: 延床×目安
-  const settlement = opts.settlement ?? Math.round((land + building) * 0.0017 * 0.5); // 固都税の半年分目安
+  // 固都税清算金: 固定資産税1.4%＋都市計画税0.3%=1.7% の半年分目安（住宅用地の土地特例で土地は1/3で概算）
+  const settlement =
+    opts.settlement ?? Math.round((land / 3 + building) * 0.017 * 0.5);
 
   // 印紙税（売買契約書、価格帯別の概算）
   const stampTax = estimateStampTax(p.price);

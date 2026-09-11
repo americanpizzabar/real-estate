@@ -42,8 +42,10 @@ export function classify(r: TransactionRecord): CompCategory {
   return "other";
 }
 
-function unitPriceOf(r: TransactionRecord): number | null {
-  if (r.unitPrice && r.unitPrice > 0) return r.unitPrice;
+function unitPriceOf(r: TransactionRecord, forceAreaBasis = false): number | null {
+  // landBldg(土地と建物)は「総額/土地面積」で基準を統一する（APIのUnitPriceは
+  // 土地単価のことがあり、総額基準と混ざると過小評価になるため無視）。
+  if (!forceAreaBasis && r.unitPrice && r.unitPrice > 0) return r.unitPrice;
   if (r.price > 0 && r.area && r.area > 0) return r.price / r.area;
   return null;
 }
@@ -55,9 +57,9 @@ function median(nums: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-function buildStats(records: TransactionRecord[]): CategoryStats | null {
+function buildStats(records: TransactionRecord[], forceAreaBasis = false): CategoryStats | null {
   const withUp = records
-    .map((r) => ({ r, up: unitPriceOf(r) }))
+    .map((r) => ({ r, up: unitPriceOf(r, forceAreaBasis) }))
     .filter((x): x is { r: TransactionRecord; up: number } => x.up != null && isFinite(x.up) && x.up > 0);
   if (withUp.length === 0) return null;
 
@@ -87,7 +89,7 @@ export function analyzeMarket(records: TransactionRecord[]): MarketAnalysis {
 
   return {
     land: buildStats(buckets.land),
-    landBldg: buildStats(buckets.landBldg),
+    landBldg: buildStats(buckets.landBldg, true), // 総額/土地面積で基準統一
     condo: buildStats(buckets.condo),
     totalCount: records.length,
     municipality,
@@ -111,6 +113,9 @@ export interface FairValueResult {
  * @param landArea 土地面積㎡
  * @param buildingArea 延床㎡
  * @param buildingValue 建物の積算価値（円）… 土地事例ベース推定の建物分に使用
+ *
+ * 区分マンション（土地は僅かな持分）を土地事例基準で評価すると大幅に過小評価するため、
+ * 土地が延床に対して極端に小さい場合は区分（専有単価）基準を優先する。
  */
 export function estimateFairValue(
   m: MarketAnalysis,
@@ -118,6 +123,17 @@ export function estimateFairValue(
   buildingArea: number,
   buildingValue: number
 ): FairValueResult {
+  // 区分マンション判定: 土地が延床の35%未満は「持分」とみなし、区分事例があれば専有単価基準
+  const looksCondo = buildingArea > 0 && landArea > 0 && landArea < buildingArea * 0.35;
+  if (looksCondo && m.condo && m.condo.count >= 3) {
+    const fv = Math.round(m.condo.medianUnitPrice * buildingArea);
+    return {
+      fairValue: fv,
+      basis: "condo",
+      formula: `区分と判定（土地${landArea}㎡は持分と推定）→ 中古マンション事例の専有単価中央値 ${m.condo.medianUnitPrice.toLocaleString()}円/㎡ × 専有${buildingArea}㎡（事例${m.condo.count}件）`,
+    };
+  }
+
   // 優先1: 土地のみ事例 × 土地面積 + 建物積算（土地値の実勢が最も信頼できる）
   if (m.land && m.land.count >= 3 && landArea > 0) {
     const fv = Math.round(m.land.medianUnitPrice * landArea + buildingValue);

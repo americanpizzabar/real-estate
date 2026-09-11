@@ -96,6 +96,19 @@ describe("estimateFairValue（優先順位と計算式）", () => {
     expect(fv.basis).toBe("none");
     expect(fv.fairValue).toBe(0);
   });
+
+  it("区分判定: 土地が延床に対し極小なら区分基準を優先", () => {
+    const landRecs = Array.from({ length: 4 }, () =>
+      rec({ type: "宅地(土地)", unitPrice: 500_000, area: 100, price: 1 })
+    );
+    const condoRecs = Array.from({ length: 4 }, () =>
+      rec({ type: "中古マンション等", price: 60_000_000, area: 60 })
+    );
+    const m = analyzeMarket([...landRecs, ...condoRecs]);
+    // 土地15㎡ / 延床70㎡（持分＝区分）→ land事例が3件以上でもcondo基準
+    const fv = estimateFairValue(m, 15, 70, 5_000_000);
+    expect(fv.basis).toBe("condo");
+  });
 });
 
 describe("calcDeviation（乖離率）", () => {
