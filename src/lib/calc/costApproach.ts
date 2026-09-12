@@ -74,7 +74,13 @@ export function calcCostApproach(
   }
 ): CostApproachResult {
   // --- 土地 ---
-  const rosenka = p.rosenkaPerSqm > 0 ? p.rosenkaPerSqm : 0;
+  // 路線価が未入力でも、公示地価があれば路線価相当（公示の約80%）を導出して評価を成立させる。
+  let rosenka = p.rosenkaPerSqm > 0 ? p.rosenkaPerSqm : 0;
+  let rosenkaSource: "input" | "derived" | "none" = rosenka > 0 ? "input" : "none";
+  if (rosenka === 0 && p.koujiPerSqm > 0) {
+    rosenka = Math.round(p.koujiPerSqm * 0.8);
+    rosenkaSource = "derived";
+  }
   const landValueRaw = rosenka * p.landArea;
   const shapeFactor = calcShapeFactor(shape);
   const landValue = Math.round(landValueRaw * shapeFactor);
@@ -105,6 +111,7 @@ export function calcCostApproach(
   // --- 合算 ---
   const totalCostValue = landValue + buildingValue;
   const landValueRatio = p.price > 0 ? landValue / p.price : 0;
+  const landValueRatioMarket = p.price > 0 ? landMarketValue / p.price : 0;
   const costValueRatio = p.price > 0 ? totalCostValue / p.price : 0;
 
   return {
@@ -118,7 +125,10 @@ export function calcCostApproach(
     legalLifespan,
     totalCostValue,
     landValueRatio,
+    landValueRatioMarket,
     costValueRatio,
+    rosenkaSource,
+    effectiveRosenka: rosenka,
   };
 }
 

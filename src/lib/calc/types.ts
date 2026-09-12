@@ -73,10 +73,16 @@ export interface CostApproachResult {
   legalLifespan: number;
   /** 積算価格（土地＋建物）（円） */
   totalCostValue: number;
-  /** 土地値比率（土地評価額 / 物件価格） */
+  /** 土地値比率（路線価ベース積算 土地評価額 / 物件価格）＝保守・融資評価向け */
   landValueRatio: number;
+  /** 土地値比率（実勢流動性価格ベース / 物件価格）＝市場実勢向け */
+  landValueRatioMarket: number;
   /** 積算価格 / 物件価格（積算評価率） */
   costValueRatio: number;
+  /** 土地単価の出所: input=入力, derived=公示地価×0.8から導出, none=未設定 */
+  rosenkaSource: "input" | "derived" | "none";
+  /** 実際に計算に用いた路線価相当（円/㎡） */
+  effectiveRosenka: number;
 }
 
 /** 初期費用（諸経費）の内訳。 */

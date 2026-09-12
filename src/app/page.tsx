@@ -326,9 +326,17 @@ export default function Home() {
       const data = (await res.json()) as Enrichment & { error?: string };
       if (!res.ok) throw new Error((data as any).error || "取得に失敗しました");
       setEnrichment(data);
-      // 空欄を公的データで自動補完
-      if (data.landPrice?.koujiPerSqm && !state.property.koujiPerSqm) {
-        setState((s) => ({ ...s, property: { ...s.property, koujiPerSqm: data.landPrice!.koujiPerSqm! } }));
+      // 空欄を公的データで自動補完（公示地価、および未入力なら路線価相当＝公示×0.8）
+      if (data.landPrice?.koujiPerSqm) {
+        const kouji = data.landPrice.koujiPerSqm;
+        setState((s) => ({
+          ...s,
+          property: {
+            ...s.property,
+            koujiPerSqm: s.property.koujiPerSqm || kouji,
+            rosenkaPerSqm: s.property.rosenkaPerSqm || Math.round(kouji * 0.8),
+          },
+        }));
       }
       const lu = data.landUse;
       if (lu && lu.source === "reinfolib") {
@@ -1097,6 +1105,19 @@ function AssetTab({
               </span>
             </div>
             <Bar value={Math.min(100, cost.landValueRatio * 100)} max={100} color={stance.color} />
+            <div className="flex justify-between text-[11px] text-slate-400">
+              <span>路線価(積算)ベース ＝ 土地評価額 {yen(cost.landValue)} ÷ 価格</span>
+              <span className="tnum">{pct(cost.landValueRatio * 100, 0)}</span>
+            </div>
+            <div className="flex justify-between text-[11px] text-slate-400">
+              <span>実勢(市場)ベース ＝ 実勢流動性価格 ÷ 価格</span>
+              <span className="tnum">{pct(cost.landValueRatioMarket * 100, 0)}</span>
+            </div>
+            {cost.rosenkaSource === "derived" && (
+              <div className="rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-[11px] text-accent leading-relaxed">
+                ℹ 路線価が未入力のため、公示地価×0.8（{yen(cost.effectiveRosenka)}/㎡）から自動推定しています。実際の路線価図の値を入力すると精度が上がります。
+              </div>
+            )}
             {cost.landValueRatio > 1.5 ? (
               <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-300 leading-relaxed">
                 ⚠ 土地値比率が異常に高い値です。<b>路線価・物件価格・土地面積</b>の入力をご確認ください

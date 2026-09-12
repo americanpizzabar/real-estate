@@ -79,6 +79,29 @@ describe("cost approach", () => {
     const r = calcCostApproach(p, 2025, { frontage: 8, depth: 10, irregular: false, corner: false });
     expect(r.landValue).toBe(30_000_000);
     expect(r.landValueRatio).toBeCloseTo(0.6, 3);
+    expect(r.rosenkaSource).toBe("input");
+    // 実勢ベースは路線価ベースより高い（流動性倍率のため）
+    expect(r.landValueRatioMarket).toBeGreaterThan(r.landValueRatio);
+  });
+
+  it("土地値比率＝土地評価額÷価格（実数突合: スクショ相当）", () => {
+    // 価格2.5億, 路線価382,000, 土地100㎡, 角地1.05 → 土地4011万 → 16%
+    const sub = {
+      name: "s", address: "東京都江東区", price: 250_000_000, landArea: 100, buildingArea: 234,
+      structure: "RC" as const, builtYear: 2022, rosenkaPerSqm: 382_000, koujiPerSqm: 478_000,
+    };
+    const r = calcCostApproach(sub, 2026, { frontage: 8, depth: 12, irregular: false, corner: true });
+    expect(r.landValue).toBe(Math.round(382_000 * 100 * r.shapeFactor));
+    expect(r.landValueRatio).toBeCloseTo(r.landValue / 250_000_000, 6);
+    expect(Math.round(r.landValueRatio * 100)).toBe(16);
+  });
+
+  it("路線価未入力なら公示地価×0.8から導出（土地値が0にならない）", () => {
+    const noRosen = { ...p, rosenkaPerSqm: 0, koujiPerSqm: 500_000 };
+    const r = calcCostApproach(noRosen, 2025, { frontage: 8, depth: 10, irregular: false, corner: false });
+    expect(r.rosenkaSource).toBe("derived");
+    expect(r.effectiveRosenka).toBe(400_000); // 500,000 × 0.8
+    expect(r.landValue).toBe(40_000_000);
   });
 
   it("築古ほど建物価値が下がる", () => {
