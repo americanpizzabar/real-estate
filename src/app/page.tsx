@@ -23,6 +23,7 @@ import {
 import { calcCostApproach, judgeLandValueStance } from "@/lib/calc/costApproach";
 import { calcInitialCosts } from "@/lib/calc/initialCosts";
 import { buildProjection, judgeDscr, type ProjectionInput } from "@/lib/calc/projection";
+import { STRUCTURE_LABEL } from "@/lib/calc/constants";
 import { rentalIncome, minpakuIncome } from "@/lib/calc/income";
 import { runStressTest, buildSensitivityMatrix } from "@/lib/calc/stress";
 import { annualDebtService } from "@/lib/calc/loan";
@@ -240,16 +241,21 @@ export default function Home() {
 
   // ---- 抽出結果をフォーム＋カタログへ適用 ----
   function applyExtracted(f: ExtractedFields, sourceName?: string) {
-    const np: PropertyInput = { ...state.property };
-    if (f.name) np.name = f.name;
-    if (f.address) np.address = f.address;
-    if (f.price) np.price = f.price;
-    if (f.landArea) np.landArea = f.landArea;
-    if (f.buildingArea) np.buildingArea = f.buildingArea;
-    if (f.structure) np.structure = f.structure;
-    if (f.builtYear) np.builtYear = f.builtYear;
-    if (f.rosenkaPerSqm) np.rosenkaPerSqm = f.rosenkaPerSqm;
-    if (f.koujiPerSqm) np.koujiPerSqm = f.koujiPerSqm;
+    // 取込は「置き換え」。未抽出項目にサンプル物件の値が残らないよう、
+    // クリーンな初期値から組み立てる（別物件の値が混ざる不具合を防止）。
+    const np: PropertyInput = {
+      name: f.name || f.address || "取込物件",
+      address: f.address || "",
+      price: f.price || 0,
+      landArea: f.landArea || 0,
+      buildingArea: f.buildingArea || 0,
+      structure: f.structure || "RC",
+      builtYear: f.builtYear || CURRENT_YEAR,
+      rosenkaPerSqm: f.rosenkaPerSqm || 0,
+      koujiPerSqm: f.koujiPerSqm || 0,
+      propertyKind: f.propertyKind,
+      units: f.units,
+    };
 
     // 賃料: 満室想定年収 > 利回り逆算 の順で反映
     let newRental = state.rental;
@@ -299,11 +305,14 @@ export default function Home() {
     setEnrichment(null);
     setState((s) => ({ ...s, property: np, rental: newRental }));
     setTab("asset");
+    // 取込後、住所から路線価・公示地価・用途地域・ハザードを自動取得
+    if (np.address) runEnrich({ address: np.address });
   }
 
   // ---- 公的データ自動紐付け ----
-  async function runEnrich() {
-    if (!state.property.address) {
+  async function runEnrich(opts?: { address?: string }) {
+    const address = opts?.address ?? state.property.address;
+    if (!address) {
       alert("所在地を入力してください。");
       return;
     }
@@ -313,7 +322,7 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          address: state.property.address,
+          address,
           maisoku: {
             rosenkaPerSqm: state.property.rosenkaPerSqm || undefined,
             koujiPerSqm: state.property.koujiPerSqm || undefined,
@@ -987,6 +996,29 @@ function MethodologyPanel({ cost, property, market, enrichment, fairValue }: any
   );
 }
 
+// ===================== 物件属性チップ =====================
+function PropertyChips({ property }: any) {
+  const age = property.builtYear ? CURRENT_YEAR - property.builtYear : null;
+  const chips = [
+    property.propertyKind && { label: "種別", v: property.propertyKind },
+    property.units ? { label: "総戸数", v: `${property.units}戸` } : null,
+    { label: "構造", v: STRUCTURE_LABEL[property.structure as keyof typeof STRUCTURE_LABEL] ?? property.structure },
+    property.builtYear && { label: "築年", v: `${property.builtYear}年${age != null ? `（築${age}年）` : ""}` },
+    property.landArea ? { label: "土地", v: `${property.landArea}㎡` } : null,
+    property.buildingArea ? { label: "延床", v: `${property.buildingArea}㎡` } : null,
+  ].filter(Boolean) as { label: string; v: string }[];
+  return (
+    <div className="flex flex-wrap gap-2">
+      {chips.map((c) => (
+        <span key={c.label} className="inline-flex items-center gap-1.5 text-[11px] bg-base-800 border border-base-600 rounded-full px-2.5 py-1">
+          <span className="text-slate-500">{c.label}</span>
+          <span className="text-slate-200 font-medium">{c.v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ===================== 一撃サマリKPIストリップ =====================
 function HeadlineKPIs({ property, cost, stance, score, metrics, dscrJudge, mode }: any) {
   const gradeColor =
@@ -1067,6 +1099,9 @@ function AssetTab({
         dscrJudge={dscrJudge}
         mode={mode}
       />
+
+      {/* 物件属性チップ（種別・戸数・構造・築年） */}
+      <PropertyChips property={property} />
 
       <div className="grid grid-cols-12 gap-4">
         {/* スコア */}

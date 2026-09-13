@@ -7,6 +7,9 @@
 /** 建物構造。法定耐用年数・再調達単価のキーになる。 */
 export type StructureType = "RC" | "SRC" | "S" | "LightS" | "W";
 
+/** 物件種別（表示・分類用。計算には影響しない）。 */
+export type PropertyKind = "マンション" | "アパート" | "一戸建て" | "その他";
+
 /** 収益モード。賃貸（長期）か民泊（短期）か。 */
 export type IncomeMode = "rental" | "minpaku";
 
@@ -31,6 +34,10 @@ export interface PropertyInput {
   structure: StructureType;
   /** 築年（西暦）。新築なら現在年。 */
   builtYear: number;
+  /** 物件種別（マンション/アパート/一戸建て）。表示用。 */
+  propertyKind?: PropertyKind;
+  /** 総戸数。表示用。 */
+  units?: number;
   /** 路線価（円/㎡）。なければ 0。 */
   rosenkaPerSqm: number;
   /** 公示地価/基準地価（円/㎡）。なければ 0。 */

@@ -16,6 +16,7 @@ import type {
   RentalParams,
   MinpakuParams,
   StructureType,
+  PropertyKind,
   RepaymentType,
   IncomeMode,
 } from "@/lib/calc/types";
@@ -81,6 +82,20 @@ export function InputPanel({
               onChange={(v) => setProp({ price: v })}
             />
             <div className="text-[11px] text-slate-500 mt-0.5">≒ {man(p.price).toLocaleString()}万円</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <SelectField<PropertyKind>
+              label="種別"
+              value={p.propertyKind ?? "その他"}
+              options={[
+                { value: "マンション", label: "マンション" },
+                { value: "アパート", label: "アパート" },
+                { value: "一戸建て", label: "一戸建て" },
+                { value: "その他", label: "その他" },
+              ]}
+              onChange={(v) => setProp({ propertyKind: v })}
+            />
+            <NumberField label="総戸数" suffix="戸" value={p.units ?? 0} onChange={(v) => setProp({ units: v })} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <NumberField label="土地面積" suffix="㎡" value={p.landArea} onChange={(v) => setProp({ landArea: v })} />

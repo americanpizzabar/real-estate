@@ -69,6 +69,9 @@ export function ReportDocument({ data, className = "" }: { data: ReportData; cla
       <div className="report-cols">
         <Section title="物件概要">
           <Row k="販売価格" v={yenExact(p.price)} strong />
+          {(p.propertyKind || p.units) && (
+            <Row k="種別 / 総戸数" v={`${p.propertyKind ?? "—"}${p.units ? ` / ${p.units}戸` : ""}`} />
+          )}
           <Row k="土地面積" v={`${p.landArea} ㎡`} />
           <Row k="建物延床面積" v={`${p.buildingArea} ㎡`} />
           <Row k="構造 / 築年" v={`${STRUCTURE_LABEL[p.structure]} / ${p.builtYear}年`} />

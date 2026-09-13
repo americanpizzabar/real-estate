@@ -98,6 +98,25 @@ export function parseMaisoku(text: string): ParsedMaisoku {
     notes.push(`表面利回り: ${out.grossYieldPct}%`);
   }
 
+  // 物件名（広告タイトル）。列間の連続スペース以降は切るが、名称内の単一スペースは残す。
+  const nameM = text.match(/(?:物件名|物件名称|名称)[：:\s]*([^\n]{2,60})/);
+  if (nameM) {
+    const nm = nameM[1].replace(/[\t]|\s{2,}.*$/g, "").replace(/[、。].*$/, "").trim().slice(0, 60);
+    if (nm) out.name = nm;
+  }
+
+  // 種別（マンション/アパート/一戸建て）
+  if (/一戸建|戸建|テラスハウス/.test(text)) out.propertyKind = "一戸建て";
+  else if (/アパート/.test(text)) out.propertyKind = "アパート";
+  else if (/マンション|区分/.test(text)) out.propertyKind = "マンション";
+
+  // 戸数（総戸数・住戸数）
+  const unitsM = text.match(/(?:総戸数|住戸数|戸数)[：:\s]*([0-9]{1,4})\s*戸/);
+  if (unitsM) {
+    out.units = toNum(unitsM[1]);
+    if (out.units) notes.push(`戸数: ${out.units}戸`);
+  }
+
   // 住所（物件情報の混入を除去）
   const addr = text.match(/(?:所在地|住所)[：:\s]*([^\n]+)/);
   if (addr) {

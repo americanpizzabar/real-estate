@@ -1,4 +1,4 @@
-import type { StructureType } from "@/lib/calc/types";
+import type { StructureType, PropertyKind } from "@/lib/calc/types";
 
 // =============================================================
 // マイソク抽出の共通スキーマ・プロンプト
@@ -16,6 +16,8 @@ export interface ExtractedFields {
   structure?: StructureType;
   floors?: number; // 階数
   builtYear?: number; // 西暦
+  propertyKind?: PropertyKind; // 種別（マンション/アパート/一戸建て）
+  units?: number; // 総戸数
   rosenkaPerSqm?: number; // 円/㎡
   koujiPerSqm?: number; // 円/㎡
   grossYieldPct?: number; // 表面利回り %
@@ -52,6 +54,8 @@ export const FIELD_LABELS: Record<keyof ExtractedFields, string> = {
   structure: "構造",
   floors: "階数",
   builtYear: "築年",
+  propertyKind: "種別",
+  units: "総戸数",
   rosenkaPerSqm: "路線価",
   koujiPerSqm: "公示地価",
   grossYieldPct: "表面利回り",
@@ -75,10 +79,11 @@ export function extractionInstruction(withBox: boolean, pastedText?: string, max
 
 {
   "fields": {
-    "name": string, "address": string,
+    "name": string(物件名・広告タイトル), "address": string,
     "price": number(円), "landArea": number(㎡), "buildingArea": number(㎡延床),
-    "structure": "RC"|"SRC"|"S"|"LightS"|"W", "floors": number,
-    "builtYear": number(西暦), "rosenkaPerSqm": number(円/㎡), "koujiPerSqm": number(円/㎡),
+    "structure": "RC"|"SRC"|"S"|"LightS"|"W", "floors": number(階数),
+    "builtYear": number(西暦4桁), "propertyKind": "マンション"|"アパート"|"一戸建て"|"その他",
+    "units": number(総戸数), "rosenkaPerSqm": number(円/㎡), "koujiPerSqm": number(円/㎡),
     "grossYieldPct": number(%), "annualRentIncome": number(満室時想定の年間賃料・円),
     "nearestStation": string, "stationWalkMin": number(分),
     "landRightType": string, "zoningUse": string,
@@ -88,9 +93,13 @@ export function extractionInstruction(withBox: boolean, pastedText?: string, max
 }
 
 ルール:
-- 不明な項目は fields から省略（推測で埋めない）。
-- 金額は必ず円単位の数値（「1億2000万円」→ 120000000）。
-- 構造は表記揺れを RC/SRC/S/LightS/W に正規化。軽量鉄骨=LightS, 重量鉄骨/S造=S。
+- 不明な項目は fields から省略（推測で埋めない）。ただし読み取れる項目は必ず埋めること。
+- name は物件名・広告見出し（例「世田谷区桜2丁目 一棟売アパート」）を必ず抽出。
+- 金額は必ず円単位の数値（「1億2000万円」→ 120000000、「5,980万円」→ 59800000）。
+- 構造は表記揺れを RC/SRC/S/LightS/W に正規化。木造/W造=W、軽量鉄骨=LightS、重量鉄骨/鉄骨造/S造=S、鉄筋コンクリート=RC、鉄骨鉄筋=SRC。「木造 2階建」→ structure:W, floors:2。
+- 築年は必ず西暦4桁に変換。和暦は換算する（昭和=+1925, 平成=+1988, 令和=+2018。例「平成2年6月」→ 1990、「昭和63年」→ 1988、「令和元年」→ 2019）。
+- propertyKind: 「一棟売アパート」「アパート」→アパート、「マンション」「区分」→マンション、「一戸建て」「戸建」→一戸建て。
+- units は「総戸数」「住戸数」等の戸数（例「4戸」→4）。
 - 利回りが無く満室想定年収と価格がある場合は grossYieldPct を計算して補完してよい。
 - evidence は抽出した各フィールドについて、読み取り元の文字列を必ず含める。${withBox ? "画像座標は左上原点・0-1000正規化で box に格納。" : ""}`;
   if (pastedText) {
@@ -159,7 +168,7 @@ function pickFields(obj: any): ExtractedFields {
 }
 
 const NUMERIC_KEYS: (keyof ExtractedFields)[] = [
-  "price", "landArea", "buildingArea", "floors", "builtYear",
+  "price", "landArea", "buildingArea", "floors", "builtYear", "units",
   "rosenkaPerSqm", "koujiPerSqm", "grossYieldPct", "annualRentIncome",
   "stationWalkMin", "buildingCoveragePct", "floorAreaRatioPct",
 ];
