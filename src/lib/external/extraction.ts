@@ -126,6 +126,12 @@ export function normalizeExtraction(raw: string): ExtractionResult {
     if (cleaned) fields.address = cleaned;
     else delete fields.address;
   }
+  // 物件名に次項目が連結するケースを除去（一行化テキスト由来）
+  if (fields.name) {
+    const cn = cleanName(fields.name);
+    if (cn) fields.name = cn;
+    else delete fields.name;
+  }
   const evidence: FieldEvidence[] = Array.isArray(obj.evidence)
     ? obj.evidence
         .filter((e: any) => e && e.field)
@@ -136,6 +142,23 @@ export function normalizeExtraction(raw: string): ExtractionResult {
         }))
     : [];
   return { fields: coerceNumbers(fields), evidence, notes };
+}
+
+/** 物件名の後ろに連結しがちな次項目ラベル（一行化テキスト対策）。 */
+const NAME_STOP =
+  /(所在地|住所|交通|アクセス|沿線|最寄|価格|販売価格|売出|利回|想定年間|想定収入|土地面積|敷地面積|建物面積|延床|専有面積|築年|築年月|構造|間取|総戸数|住戸数|土地権利|地目|用途地域|建ぺい|建蔽|容積|接道|駐車|現況|引渡|取引態様|管理番号)/;
+
+/**
+ * 物件名を整える。次項目ラベル以降を切り、名称内の単一スペースは残す。
+ * 例: 「世田谷区桜2丁目 一棟売アパート 所在地 東京都…」→「世田谷区桜2丁目 一棟売アパート」
+ */
+export function cleanName(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  let s = String(raw).replace(/\s+/g, " ").trim();
+  const m = s.match(NAME_STOP);
+  if (m && m.index != null && m.index > 2) s = s.slice(0, m.index);
+  s = s.replace(/[ \t　:：|｜/／、。-]+$/u, "").trim();
+  return s.slice(0, 60) || undefined;
 }
 
 /**

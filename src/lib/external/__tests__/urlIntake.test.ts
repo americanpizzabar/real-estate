@@ -1,6 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { parseHtml } from "../urlIntake";
-import { cleanAddress } from "../extraction";
+import { cleanAddress, cleanName } from "../extraction";
+
+describe("cleanName（物件名の次項目混入除去）", () => {
+  it("一行化テキストで次項目(所在地)以降を切る", () => {
+    expect(cleanName("世田谷区桜2丁目 一棟売アパート 所在地 東京都世田谷区桜2丁目 価格 5980万円"))
+      .toBe("世田谷区桜2丁目 一棟売アパート");
+  });
+  it("クリーンな名称はそのまま", () => {
+    expect(cleanName("世田谷区桜2丁目 一棟売アパート")).toBe("世田谷区桜2丁目 一棟売アパート");
+  });
+  it("交通ラベル以降を切る", () => {
+    expect(cleanName("中央区日本橋 区分マンション 交通 東京駅徒歩5分")).toBe("中央区日本橋 区分マンション");
+  });
+});
 
 describe("cleanAddress（住所クレンジング）", () => {
   it("物件情報の混入を除去", () => {

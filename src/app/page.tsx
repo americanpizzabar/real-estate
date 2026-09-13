@@ -102,6 +102,7 @@ export default function Home() {
   const [enriching, setEnriching] = React.useState(false);
   const [onboarded, setOnboarded] = React.useState(true); // 既定はtrue→ちらつき防止、effectで判定
   const [mobileInputsOpen, setMobileInputsOpen] = React.useState(false);
+  const [importNotice, setImportNotice] = React.useState<string[] | null>(null);
 
   React.useEffect(() => {
     fetchCatalog().then(({ items }) => setCatalog(items));
@@ -299,6 +300,16 @@ export default function Home() {
       sourceName,
       snapshot,
     };
+    // 取込できなかった重要項目を検出し、確認を促す（既定値の誤表示を防ぐ）
+    const missing: string[] = [];
+    if (!f.name) missing.push("物件名");
+    if (!f.price) missing.push("価格");
+    if (!f.structure) missing.push("構造");
+    if (!f.builtYear) missing.push("築年");
+    if (!f.landArea) missing.push("土地面積");
+    if (!f.buildingArea) missing.push("延床面積");
+    setImportNotice(missing.length ? missing : null);
+
     saveItem(item).then(setCatalog);
     setCurrentItemId(id);
     setExtras(newExtras);
@@ -508,6 +519,8 @@ export default function Home() {
                 showOnboarding={!onboarded}
                 onIntake={() => setIntakeOpen(true)}
                 dismissOnboarding={dismissOnboarding}
+                importNotice={importNotice}
+                dismissImportNotice={() => setImportNotice(null)}
               />
             )}
 
@@ -1082,11 +1095,26 @@ function AssetTab({
   showOnboarding,
   onIntake,
   dismissOnboarding,
+  importNotice,
+  dismissImportNotice,
 }: any) {
   return (
     <>
       {showOnboarding && (
         <OnboardingHero onIntake={onIntake} dismiss={dismissOnboarding} />
+      )}
+
+      {importNotice && importNotice.length > 0 && (
+        <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 flex items-start gap-3">
+          <span className="text-amber-400 text-lg leading-none">⚠</span>
+          <div className="flex-1 text-[12px] text-amber-200 leading-relaxed">
+            <b>取込できなかった項目があります: {importNotice.join("・")}</b>
+            <br />
+            これらは仮の値（既定値）が入っています。左の「物件情報」で正しい値を入力してください。
+            ページがJavaScript描画/会員限定の場合は、PDF保存・スクリーンショットからの取り込みが確実です。
+          </div>
+          <button onClick={dismissImportNotice} className="text-amber-300 hover:text-amber-100 text-sm">✕</button>
+        </div>
       )}
 
       {/* 一撃サマリ：1画面で重要指標がすべてわかる */}

@@ -1,5 +1,5 @@
 import type { PropertyInput, StructureType } from "@/lib/calc/types";
-import { cleanAddress } from "./extraction";
+import { cleanAddress, cleanName } from "./extraction";
 
 // =============================================================
 // マイソク（物件概要書）テキストからの項目抽出
@@ -98,10 +98,10 @@ export function parseMaisoku(text: string): ParsedMaisoku {
     notes.push(`表面利回り: ${out.grossYieldPct}%`);
   }
 
-  // 物件名（広告タイトル）。列間の連続スペース以降は切るが、名称内の単一スペースは残す。
-  const nameM = text.match(/(?:物件名|物件名称|名称)[：:\s]*([^\n]{2,60})/);
+  // 物件名（広告タイトル）。次項目ラベル以降は除去（一行化テキスト対策）。
+  const nameM = text.match(/(?:物件名|物件名称|名称)[：:\s]*([^\n]{2,80})/);
   if (nameM) {
-    const nm = nameM[1].replace(/[\t]|\s{2,}.*$/g, "").replace(/[、。].*$/, "").trim().slice(0, 60);
+    const nm = cleanName(nameM[1]);
     if (nm) out.name = nm;
   }
 

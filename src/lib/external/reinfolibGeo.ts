@@ -153,28 +153,39 @@ export async function fetchNearestLandPrice(
   try {
     const z = 15;
     const { x, y } = latLonToTilePixel(lat, lon, z);
-    const gj = await fetchGeoJson("/XPT001", z, x, y, { year: String(year) });
-    const feats = gj?.features ?? [];
+    // 公示地価点は疎なため、対象タイルと周囲8タイル(3×3)を探索して最寄点を採る
+    const tiles: { x: number; y: number }[] = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) tiles.push({ x: x + dx, y: y + dy });
+    }
+    const gjs = await Promise.all(
+      tiles.map((t) =>
+        fetchGeoJson("/XPT001", z, t.x, t.y, { year: String(year) }).catch(() => null)
+      )
+    );
     let best: { price: number; name?: string; dist: number } | null = null;
-    for (const f of feats) {
-      const c = f.geometry?.coordinates;
-      if (!c) continue;
-      const price = num(
-        pick(f.properties ?? {}, [
-          "u_current_years_price_ja",
-          "current_years_price",
-          "price",
-          "u_price",
-        ])
-      );
-      if (!price) continue;
-      const dist = haversineM(lat, lon, Number(c[1]), Number(c[0]));
-      if (!best || dist < best.dist) {
-        best = {
-          price,
-          name: pick(f.properties ?? {}, ["standard_lot_number_ja", "address", "location"]),
-          dist,
-        };
+    for (const gj of gjs) {
+      const feats = gj?.features ?? [];
+      for (const f of feats) {
+        const c = f.geometry?.coordinates;
+        if (!c) continue;
+        const price = num(
+          pick(f.properties ?? {}, [
+            "u_current_years_price_ja",
+            "current_years_price",
+            "price",
+            "u_price",
+          ])
+        );
+        if (!price) continue;
+        const dist = haversineM(lat, lon, Number(c[1]), Number(c[0]));
+        if (!best || dist < best.dist) {
+          best = {
+            price,
+            name: pick(f.properties ?? {}, ["standard_lot_number_ja", "address", "location"]),
+            dist,
+          };
+        }
       }
     }
     if (!best) return null;
