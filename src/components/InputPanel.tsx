@@ -35,6 +35,8 @@ export interface InputState {
   minpaku: MinpakuParams;
   downPayment: number;
   taxRatePct: number;
+  taxMode: "flat" | "individual";
+  otherIncome: number; // 個人の他の課税所得（円）
   exitCapRatePct: number;
   years: number;
 }
@@ -212,7 +214,24 @@ export function InputPanel({
             <div className="grid grid-cols-2 gap-2">
               <NumberField label="予測年数" suffix="年" value={state.years} onChange={(v) => set({ years: v })} />
               <NumberField label="出口還元利回り" suffix="%" step={0.1} value={state.exitCapRatePct} onChange={(v) => set({ exitCapRatePct: v })} />
-              <NumberField label="実効税率" suffix="%" value={state.taxRatePct} onChange={(v) => set({ taxRatePct: v })} />
+            </div>
+            <div className="mt-2">
+              <SelectField<"flat" | "individual">
+                label="課税区分"
+                value={state.taxMode}
+                options={[
+                  { value: "flat", label: "法人／実効税率" },
+                  { value: "individual", label: "個人／所得税累進" },
+                ]}
+                onChange={(v) => set({ taxMode: v })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {state.taxMode === "flat" ? (
+                <NumberField label="実効税率" suffix="%" value={state.taxRatePct} onChange={(v) => set({ taxRatePct: v })} />
+              ) : (
+                <NumberField label="他の課税所得" suffix="円" step={500_000} value={state.otherIncome} onChange={(v) => set({ otherIncome: v })} />
+              )}
             </div>
           </div>
         </div>

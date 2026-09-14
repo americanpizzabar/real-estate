@@ -11,6 +11,7 @@ import { buildLoanSchedule, annualDebtService } from "./loan";
 import { rentalIncome, minpakuIncome, type IncomeBreakdown } from "./income";
 import { irr, npv } from "./finance";
 import { LEGAL_LIFESPAN, DEFAULT_BUILDING_RATIO } from "./constants";
+import { propertyIncomeTax, type TaxMode } from "./tax";
 
 // =============================================================
 // 複数年キャッシュフロー予測エンジン
@@ -30,8 +31,12 @@ export interface ProjectionInput {
   initialCostsTotal: number;
   /** 予測年数（10〜20年） */
   years: number;
-  /** 実効税率（0〜1） */
+  /** 実効税率（0〜1）。flatモードで使用。 */
   taxRate: number;
+  /** 課税区分。既定 flat（実効税率）。individual は所得税累進＋住民税。 */
+  taxMode?: TaxMode;
+  /** individual時の他の課税所得（給与等、円）。限界税率算出に使用。 */
+  otherIncome?: number;
   /** 割引率（NPV用、0〜1） */
   discountRate: number;
   /** 出口（売却）想定: 売却年。null なら保有継続のみ。 */
@@ -137,7 +142,12 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
 
     // --- 税 ---
     const taxableIncome = inc.noi - interest - depreciation;
-    const tax = Math.round(Math.max(0, taxableIncome) * taxRate);
+    const tax = propertyIncomeTax(
+      taxableIncome,
+      input.taxMode ?? "flat",
+      taxRate,
+      input.otherIncome ?? 0
+    );
 
     // --- キャッシュフロー ---
     const btcf = inc.noi - debtService;

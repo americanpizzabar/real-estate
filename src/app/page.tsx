@@ -38,6 +38,7 @@ import { yen, pct, signedPct, man } from "@/lib/format";
 import { IntakeModal } from "@/components/IntakeModal";
 import { Catalog } from "@/components/Catalog";
 import { ReportDocument, type ReportData } from "@/components/ReportDocument";
+import { AdvancedTab } from "@/components/AdvancedTab";
 import type { ExtractedFields } from "@/lib/external/extraction";
 import type { Enrichment } from "@/lib/external/enrichment";
 import {
@@ -68,7 +69,7 @@ const PropertyMap = dynamic(() => import("@/components/PropertyMap"), {
   ),
 });
 
-type Tab = "asset" | "income" | "compare" | "catalog" | "map";
+type Tab = "asset" | "income" | "compare" | "advanced" | "catalog" | "map";
 
 const initialState: InputState = {
   property: SAMPLE_PROPERTY,
@@ -78,6 +79,8 @@ const initialState: InputState = {
   minpaku: DEFAULT_MINPAKU,
   downPayment: DEFAULT_DOWN_PAYMENT,
   taxRatePct: DEFAULT_TAX_RATE * 100,
+  taxMode: "flat",
+  otherIncome: 8_000_000,
   exitCapRatePct: DEFAULT_EXIT_CAP_RATE,
   years: DEFAULT_PROJECTION_YEARS,
 };
@@ -175,6 +178,8 @@ export default function Home() {
         initialCostsTotal: initial.total,
         years: state.years,
         taxRate,
+        taxMode: state.taxMode,
+        otherIncome: state.otherIncome,
         discountRate: DEFAULT_DISCOUNT_RATE,
         exitYear: state.years,
         exitCapRatePct: state.exitCapRatePct,
@@ -555,6 +560,10 @@ export default function Home() {
             {tab === "compare" && (
               <CompareTab rental={rentalProj} minpaku={minpakuProj} property={state.property} />
             )}
+
+            {tab === "advanced" && (
+              <AdvancedTab projInput={buildProjFor(mode)} mode={mode} />
+            )}
           </main>
         </div>
       )}
@@ -593,8 +602,9 @@ function Header({
     { key: "asset", label: "① 資産価値・物件判定", short: "資産価値" },
     { key: "income", label: "② 収益シミュレーション", short: "収益" },
     { key: "compare", label: "③ 賃貸×民泊 比較", short: "比較" },
-    { key: "map", label: "④ 地図(GIS)", short: "地図" },
-    { key: "catalog", label: `⑤ 物件カタログ${catalogCount ? ` (${catalogCount})` : ""}`, short: `カタログ${catalogCount ? `(${catalogCount})` : ""}` },
+    { key: "advanced", label: "④ 高度分析", short: "高度分析" },
+    { key: "map", label: "⑤ 地図(GIS)", short: "地図" },
+    { key: "catalog", label: `⑥ 物件カタログ${catalogCount ? ` (${catalogCount})` : ""}`, short: `カタログ${catalogCount ? `(${catalogCount})` : ""}` },
   ];
   const color = grade === "S" || grade === "A" ? "#2dd4a7" : grade === "B" ? "#f5b14c" : "#f56c6c";
   return (
