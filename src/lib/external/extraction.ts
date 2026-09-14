@@ -93,7 +93,8 @@ export function extractionInstruction(withBox: boolean, pastedText?: string, max
 }
 
 ルール:
-- 不明な項目は fields から省略（推測で埋めない）。ただし読み取れる項目は必ず埋めること。
+- 不明な項目は fields から必ず省略（推測で埋めない）。ただし本文に明記された項目は必ず埋めること。
+- 【重要】構造・築年・階数が本文に明記されていない場合は絶対に出力しない。特に築年に「現在年」や当年を推測で入れてはならない。構造を「RC」等でデフォルト補完してはならない。本文に無ければ省略する。
 - name は物件名・広告見出し（例「世田谷区桜2丁目 一棟売アパート」）を必ず抽出。
 - 金額は必ず円単位の数値（「1億2000万円」→ 120000000、「5,980万円」→ 59800000）。
 - 構造は表記揺れを RC/SRC/S/LightS/W に正規化。木造/W造=W、軽量鉄骨=LightS、重量鉄骨/鉄骨造/S造=S、鉄筋コンクリート=RC、鉄骨鉄筋=SRC。「木造 2階建」→ structure:W, floors:2。
@@ -132,6 +133,23 @@ export function normalizeExtraction(raw: string): ExtractionResult {
     if (cn) fields.name = cn;
     else delete fields.name;
   }
+  // 構造が日本語/表記揺れで返ってきた場合は列挙値へ正規化
+  if (fields.structure && !["RC", "SRC", "S", "LightS", "W"].includes(fields.structure as string)) {
+    const ns = normalizeStructure(String(fields.structure));
+    if (ns) fields.structure = ns;
+    else delete fields.structure;
+  }
+  // 築年が和暦文字列（平成2年 等）や「1990年」で返った場合の西暦化
+  if (fields.builtYear != null && typeof fields.builtYear === "string") {
+    const wy = warekiToYear(fields.builtYear);
+    if (wy) (fields as any).builtYear = wy;
+  }
+  // 築年の妥当性チェック: 未来年や当年（推測で現在年を入れた疑い）は破棄
+  const nowY = new Date().getFullYear();
+  if (fields.builtYear != null) {
+    const by = Number(fields.builtYear);
+    if (!isFinite(by) || by < 1900 || by >= nowY) delete fields.builtYear;
+  }
   const evidence: FieldEvidence[] = Array.isArray(obj.evidence)
     ? obj.evidence
         .filter((e: any) => e && e.field)
@@ -142,6 +160,31 @@ export function normalizeExtraction(raw: string): ExtractionResult {
         }))
     : [];
   return { fields: coerceNumbers(fields), evidence, notes };
+}
+
+/** 構造の表記揺れ・日本語を列挙値へ正規化。判定不能はnull。 */
+export function normalizeStructure(raw: string): StructureType | null {
+  const s = String(raw);
+  if (/SRC|鉄骨鉄筋/i.test(s)) return "SRC";
+  if (/軽量鉄骨|軽量S/i.test(s)) return "LightS";
+  if (/RC|鉄筋コンクリート/i.test(s)) return "RC";
+  if (/重量鉄骨|鉄骨造|鉄骨|S造|\bS\b/i.test(s)) return "S";
+  if (/木造|W造|\bW\b/i.test(s)) return "W";
+  return null;
+}
+
+/** 「平成2年」「令和元年」「1990年」等を西暦4桁へ。判定不能はnull。 */
+export function warekiToYear(raw: string): number | null {
+  const s = String(raw);
+  const west = s.match(/((?:19|20)[0-9]{2})/);
+  if (west) return Number(west[1]);
+  const m = s.match(/(昭和|平成|令和)\s*([0-9]{1,2}|元)/);
+  if (m) {
+    const base: Record<string, number> = { 昭和: 1925, 平成: 1988, 令和: 2018 };
+    const n = m[2] === "元" ? 1 : Number(m[2]);
+    if (n > 0) return base[m[1]] + n;
+  }
+  return null;
 }
 
 /** 物件名の後ろに連結しがちな次項目ラベル（一行化テキスト対策）。 */

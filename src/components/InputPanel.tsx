@@ -45,16 +45,24 @@ export function InputPanel({
   mode,
   setMode,
   onIntake,
+  flagged = [],
+  onClearFlag,
 }: {
   state: InputState;
   set: (patch: Partial<InputState>) => void;
   mode: IncomeMode;
   setMode: (m: IncomeMode) => void;
   onIntake: () => void;
+  flagged?: string[];
+  onClearFlag?: (key: string) => void;
 }) {
   const p = state.property;
-  const setProp = (patch: Partial<PropertyInput>) =>
+  const setProp = (patch: Partial<PropertyInput>) => {
+    // 要確認フラグは編集で解除
+    if (onClearFlag) Object.keys(patch).forEach((k) => onClearFlag(k));
     set({ property: { ...p, ...patch } });
+  };
+  const fl = (k: string) => flagged.includes(k);
   const ltv = p.price > 0 ? Math.round((state.loan.amount / p.price) * 100) : 0;
 
   return (
@@ -71,7 +79,7 @@ export function InputPanel({
       {/* 物件情報 */}
       <Section title="物件情報">
         <div className="space-y-2.5">
-          <TextField label="物件名" value={p.name} onChange={(v) => setProp({ name: v })} />
+          <TextField label="物件名" value={p.name} onChange={(v) => setProp({ name: v })} flagged={fl("name")} />
           <TextField label="所在地" value={p.address} onChange={(v) => setProp({ address: v })} />
           <div>
             <NumberField
@@ -80,6 +88,7 @@ export function InputPanel({
               value={p.price}
               step={1_000_000}
               onChange={(v) => setProp({ price: v })}
+              flagged={fl("price")}
             />
             <div className="text-[11px] text-slate-500 mt-0.5">≒ {man(p.price).toLocaleString()}万円</div>
           </div>
@@ -98,17 +107,18 @@ export function InputPanel({
             <NumberField label="総戸数" suffix="戸" value={p.units ?? 0} onChange={(v) => setProp({ units: v })} />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <NumberField label="土地面積" suffix="㎡" value={p.landArea} onChange={(v) => setProp({ landArea: v })} />
-            <NumberField label="延床面積" suffix="㎡" value={p.buildingArea} onChange={(v) => setProp({ buildingArea: v })} />
+            <NumberField label="土地面積" suffix="㎡" value={p.landArea} onChange={(v) => setProp({ landArea: v })} flagged={fl("landArea")} />
+            <NumberField label="延床面積" suffix="㎡" value={p.buildingArea} onChange={(v) => setProp({ buildingArea: v })} flagged={fl("buildingArea")} />
           </div>
           <SelectField
             label="構造"
             value={p.structure}
             options={STRUCTURE_OPTIONS}
             onChange={(v) => setProp({ structure: v })}
+            flagged={fl("structure")}
           />
           <div className="grid grid-cols-2 gap-2">
-            <NumberField label="築年（西暦）" value={p.builtYear} onChange={(v) => setProp({ builtYear: v })} />
+            <NumberField label="築年（西暦）" value={p.builtYear} onChange={(v) => setProp({ builtYear: v })} flagged={fl("builtYear")} />
             <NumberField label="路線価" suffix="円/㎡" step={10_000} value={p.rosenkaPerSqm} onChange={(v) => setProp({ rosenkaPerSqm: v })} />
           </div>
           <p className="text-[10px] text-slate-500 -mt-1">

@@ -103,6 +103,7 @@ export default function Home() {
   const [onboarded, setOnboarded] = React.useState(true); // 既定はtrue→ちらつき防止、effectで判定
   const [mobileInputsOpen, setMobileInputsOpen] = React.useState(false);
   const [importNotice, setImportNotice] = React.useState<string[] | null>(null);
+  const [unverified, setUnverified] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     fetchCatalog().then(({ items }) => setCatalog(items));
@@ -251,7 +252,7 @@ export default function Home() {
       landArea: f.landArea || 0,
       buildingArea: f.buildingArea || 0,
       structure: f.structure || "RC",
-      builtYear: f.builtYear || CURRENT_YEAR,
+      builtYear: f.builtYear || 0, // 0 = 未取得（現在年で誤魔化さない）
       rosenkaPerSqm: f.rosenkaPerSqm || 0,
       koujiPerSqm: f.koujiPerSqm || 0,
       propertyKind: f.propertyKind,
@@ -301,14 +302,19 @@ export default function Home() {
       snapshot,
     };
     // 取込できなかった重要項目を検出し、確認を促す（既定値の誤表示を防ぐ）
-    const missing: string[] = [];
-    if (!f.name) missing.push("物件名");
-    if (!f.price) missing.push("価格");
-    if (!f.structure) missing.push("構造");
-    if (!f.builtYear) missing.push("築年");
-    if (!f.landArea) missing.push("土地面積");
-    if (!f.buildingArea) missing.push("延床面積");
-    setImportNotice(missing.length ? missing : null);
+    const missingKeys: string[] = [];
+    if (!f.name) missingKeys.push("name");
+    if (!f.price) missingKeys.push("price");
+    if (!f.structure) missingKeys.push("structure");
+    if (!f.builtYear) missingKeys.push("builtYear");
+    if (!f.landArea) missingKeys.push("landArea");
+    if (!f.buildingArea) missingKeys.push("buildingArea");
+    const KEY_LABEL: Record<string, string> = {
+      name: "物件名", price: "価格", structure: "構造", builtYear: "築年",
+      landArea: "土地面積", buildingArea: "延床面積",
+    };
+    setUnverified(missingKeys);
+    setImportNotice(missingKeys.length ? missingKeys.map((k) => KEY_LABEL[k]) : null);
 
     saveItem(item).then(setCatalog);
     setCurrentItemId(id);
@@ -491,7 +497,15 @@ export default function Home() {
             <div
               className={`${mobileInputsOpen ? "block" : "hidden"} lg:block lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto pr-1`}
             >
-              <InputPanel state={state} set={set} mode={mode} setMode={setMode} onIntake={() => setIntakeOpen(true)} />
+              <InputPanel
+                state={state}
+                set={set}
+                mode={mode}
+                setMode={setMode}
+                onIntake={() => setIntakeOpen(true)}
+                flagged={unverified}
+                onClearFlag={(k) => setUnverified((u) => u.filter((x) => x !== k))}
+              />
             </div>
           </aside>
 

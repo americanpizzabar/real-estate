@@ -59,6 +59,7 @@ export function NumberField({
   step = 1,
   suffix,
   min,
+  flagged,
 }: {
   label: string;
   value: number;
@@ -66,16 +67,18 @@ export function NumberField({
   step?: number;
   suffix?: string;
   min?: number;
+  flagged?: boolean;
 }) {
   return (
     <label className="block">
       <span className="field-label">
         {label}
         {suffix ? <span className="text-slate-500"> ({suffix})</span> : null}
+        {flagged && <span className="ml-1 text-amber-400">⚠要確認</span>}
       </span>
       <input
         type="number"
-        className="field-input"
+        className={`field-input ${flagged ? "ring-1 ring-amber-500/70 border-amber-500/70" : ""}`}
         value={Number.isFinite(value) ? value : 0}
         step={step}
         min={min}
@@ -89,17 +92,22 @@ export function TextField({
   label,
   value,
   onChange,
+  flagged,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  flagged?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="field-label">{label}</span>
+      <span className="field-label">
+        {label}
+        {flagged && <span className="ml-1 text-amber-400">⚠要確認</span>}
+      </span>
       <input
         type="text"
-        className="field-input"
+        className={`field-input ${flagged ? "ring-1 ring-amber-500/70 border-amber-500/70" : ""}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -112,17 +120,22 @@ export function SelectField<T extends string>({
   value,
   options,
   onChange,
+  flagged,
 }: {
   label: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
+  flagged?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="field-label">{label}</span>
+      <span className="field-label">
+        {label}
+        {flagged && <span className="ml-1 text-amber-400">⚠要確認</span>}
+      </span>
       <select
-        className="field-input"
+        className={`field-input ${flagged ? "ring-1 ring-amber-500/70 border-amber-500/70" : ""}`}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
       >

@@ -1,6 +1,30 @@
 import { describe, it, expect } from "vitest";
 import { parseHtml } from "../urlIntake";
-import { cleanAddress, cleanName } from "../extraction";
+import { cleanAddress, cleanName, normalizeExtraction, normalizeStructure, warekiToYear } from "../extraction";
+
+describe("抽出の正規化（Geminiが日本語/推測値で返した場合）", () => {
+  it("構造の日本語→列挙値", () => {
+    expect(normalizeStructure("木造 2階建")).toBe("W");
+    expect(normalizeStructure("鉄骨鉄筋コンクリート")).toBe("SRC");
+    expect(normalizeStructure("軽量鉄骨造")).toBe("LightS");
+    expect(normalizeStructure("畑")).toBeNull();
+  });
+  it("和暦→西暦", () => {
+    expect(warekiToYear("平成2年6月")).toBe(1990);
+    expect(warekiToYear("令和元年")).toBe(2019);
+    expect(warekiToYear("1990年築")).toBe(1990);
+  });
+  it("normalizeExtractionで木造/平成2年を正しく取り込む", () => {
+    const raw = JSON.stringify({ fields: { structure: "木造 2階建", builtYear: "平成2年6月" }, evidence: [] });
+    const r = normalizeExtraction(raw);
+    expect(r.fields.structure).toBe("W");
+    expect(r.fields.builtYear).toBe(1990);
+  });
+  it("現在年の推測築年は破棄", () => {
+    const raw = JSON.stringify({ fields: { builtYear: new Date().getFullYear() }, evidence: [] });
+    expect(normalizeExtraction(raw).fields.builtYear).toBeUndefined();
+  });
+});
 
 describe("cleanName（物件名の次項目混入除去）", () => {
   it("一行化テキストで次項目(所在地)以降を切る", () => {
