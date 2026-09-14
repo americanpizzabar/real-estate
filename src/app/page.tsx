@@ -31,6 +31,7 @@ import { computeScore } from "@/lib/calc/scoring";
 import {
   calcDeviation,
   estimateFairValue,
+  deviationScore,
   type MarketAnalysis,
 } from "@/lib/external/marketAnalysis";
 import type { IncomeMode, PropertyInput, RentalParams } from "@/lib/calc/types";
@@ -39,6 +40,8 @@ import { IntakeModal } from "@/components/IntakeModal";
 import { Catalog } from "@/components/Catalog";
 import { ReportDocument, type ReportData } from "@/components/ReportDocument";
 import { AdvancedTab } from "@/components/AdvancedTab";
+import { AssessPanel } from "@/components/AssessPanel";
+import type { AssessInput } from "@/lib/assess";
 import type { ExtractedFields } from "@/lib/external/extraction";
 import type { Enrichment } from "@/lib/external/enrichment";
 import {
@@ -215,6 +218,24 @@ export default function Home() {
     if (!fairValue || fairValue.fairValue <= 0) return null;
     return calcDeviation(state.property.price, fairValue.fairValue, cost.totalCostValue);
   }, [fairValue, state.property.price, cost.totalCostValue]);
+
+  // 周辺事例に対する割安度偏差値
+  const compDeviation = React.useMemo(() => {
+    if (!market) return null;
+    const a = market.analysis;
+    const { price, landArea, buildingArea } = state.property;
+    const looksCondo = buildingArea > 0 && landArea > 0 && landArea < buildingArea * 0.35;
+    if (looksCondo && a.condo && buildingArea > 0) {
+      return deviationScore(price / buildingArea, a.condo, "condo");
+    }
+    if (a.landBldg && landArea > 0) {
+      return deviationScore(price / landArea, a.landBldg, "landBldg");
+    }
+    if (a.condo && buildingArea > 0) {
+      return deviationScore(price / buildingArea, a.condo, "condo");
+    }
+    return null;
+  }, [market, state.property]);
 
   // デモ事例は判断材料にしない（スコアの市場割安度は中立50のまま）
   const score = React.useMemo(
@@ -546,6 +567,7 @@ export default function Home() {
                 market={market}
                 deviation={deviation}
                 fairValue={fairValue}
+                compDeviation={compDeviation}
                 pref={pref}
                 setPref={setPref}
                 loadMarket={loadMarket}
@@ -1124,6 +1146,7 @@ function AssetTab({
   market,
   deviation,
   fairValue,
+  compDeviation,
   metrics,
   dscrJudge,
   mode,
@@ -1172,6 +1195,34 @@ function AssetTab({
 
       {/* 物件属性チップ（種別・戸数・構造・築年） */}
       <PropertyChips property={property} />
+
+      {/* AI総合所見 */}
+      <AssessPanel
+        input={
+          {
+            name: property.name || "対象物件",
+            price: property.price,
+            grossYieldPct: metrics.grossYieldPct,
+            netYieldPct: metrics.netYieldPct,
+            landValueRatio: cost.landValueRatio,
+            costValueRatio: cost.costValueRatio,
+            dscr: metrics.dscr,
+            ccr: metrics.ccr,
+            irrPct: metrics.irrPct,
+            paybackYear: metrics.paybackYear,
+            deadCrossYear: metrics.deadCrossYear,
+            score: score.total,
+            grade: score.grade,
+            mode,
+            vsFairPct: deviation ? deviation.vsFairPct : null,
+            compTScore: compDeviation ? compDeviation.tScore : null,
+            hazardSummary: enrichment?.hazard?.summary ?? null,
+            hazardAffected: enrichment?.hazard
+              ? enrichment.hazard.flood.affected || enrichment.hazard.tsunami.affected || enrichment.hazard.landslide.affected
+              : false,
+          } as AssessInput
+        }
+      />
 
       <div className="grid grid-cols-12 gap-4">
         {/* スコア */}
@@ -1343,6 +1394,41 @@ function AssetTab({
                 </div>
               )}
             </div>
+
+            {/* 割安度偏差値（周辺事例の分布に対する統計スコア） */}
+            {compDeviation && (
+              <div className="rounded-md border border-base-600 bg-base-900 p-3 flex items-center gap-4 flex-wrap">
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-400">割安度偏差値</div>
+                  <div
+                    className="tnum text-3xl font-bold leading-none"
+                    style={{ color: compDeviation.tScore >= 55 ? "#2dd4a7" : compDeviation.tScore > 45 ? "#4f9cf9" : "#f56c6c" }}
+                  >
+                    {compDeviation.tScore}
+                  </div>
+                  <div className="text-[10px] text-slate-500">50=相場並</div>
+                </div>
+                {/* 分布バー */}
+                <div className="flex-1 min-w-[180px]">
+                  <div className="relative h-2 rounded-full bg-gradient-to-r from-[#f56c6c] via-[#4f9cf9] to-[#2dd4a7]">
+                    <div
+                      className="absolute -top-1 w-1 h-4 bg-white rounded"
+                      style={{ left: `${Math.max(0, Math.min(100, 100 - compDeviation.percentile))}%` }}
+                      title={`下から${compDeviation.percentile}%`}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                    <span>割高</span><span>相場並</span><span>割安</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+                    <span className="font-bold" style={{ color: compDeviation.tScore >= 55 ? "#2dd4a7" : compDeviation.tScore > 45 ? "#4f9cf9" : "#f56c6c" }}>
+                      {compDeviation.verdict}
+                    </span>
+                    ： {compDeviation.message}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 代表事例（中央値近傍） */}
             {(market.analysis.land?.samples?.length || market.analysis.landBldg?.samples?.length) ? (

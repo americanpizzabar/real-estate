@@ -19,6 +19,10 @@ export interface CategoryStats {
   meanUnitPrice: number;
   minUnitPrice: number;
   maxUnitPrice: number;
+  /** 単価の標準偏差（偏差値算出用） */
+  stdUnitPrice: number;
+  /** 単価の昇順配列（パーセンタイル算出用） */
+  unitPrices: number[];
   /** 代表事例（UI表示用、単価順の中央付近から数件） */
   samples: TransactionRecord[];
 }
@@ -65,16 +69,69 @@ function buildStats(records: TransactionRecord[], forceAreaBasis = false): Categ
 
   const ups = withUp.map((x) => x.up);
   const med = median(ups);
+  const mean = ups.reduce((a, b) => a + b, 0) / ups.length;
+  const variance = ups.reduce((a, b) => a + (b - mean) ** 2, 0) / ups.length;
+  const std = Math.sqrt(variance);
   // 中央値近傍の事例を代表サンプルに（外れ値でなく「相場らしい」事例を見せる）
   const sorted = [...withUp].sort((a, b) => Math.abs(a.up - med) - Math.abs(b.up - med));
   return {
     count: ups.length,
     medianUnitPrice: Math.round(med),
-    meanUnitPrice: Math.round(ups.reduce((a, b) => a + b, 0) / ups.length),
+    meanUnitPrice: Math.round(mean),
     minUnitPrice: Math.round(Math.min(...ups)),
     maxUnitPrice: Math.round(Math.max(...ups)),
+    stdUnitPrice: Math.round(std),
+    unitPrices: [...ups].sort((a, b) => a - b),
     samples: sorted.slice(0, 5).map((x) => x.r),
   };
+}
+
+// =============================================================
+// 周辺事例に対する偏差値化（統計的な割安度スコア）
+// =============================================================
+export interface DeviationScore {
+  /** 対象物件の単価（円/㎡） */
+  unitPrice: number;
+  /** 比較に用いた分類 */
+  basis: CompCategory;
+  /** 事例件数 */
+  count: number;
+  /** 割安度の偏差値（50=相場並、>50=割安、<50=割高）。単価が安いほど高い。 */
+  tScore: number;
+  /** 対象単価が事例分布で下から何%か（低いほど割安） */
+  percentile: number;
+  verdict: "割安" | "やや割安" | "相場並" | "やや割高" | "割高";
+  message: string;
+}
+
+/**
+ * 対象物件の単価を周辺事例の分布と比較し、割安度の偏差値を算出。
+ * 単価が安い＝割安＝高偏差値になるよう符号反転。
+ */
+export function deviationScore(
+  propertyUnitPrice: number,
+  stats: CategoryStats,
+  basis: CompCategory
+): DeviationScore | null {
+  if (propertyUnitPrice <= 0 || stats.count < 3 || stats.stdUnitPrice <= 0) return null;
+  // 割安度Tスコア = 50 + 10 * (平均 - 対象) / 標準偏差（安いほど高い）
+  const raw = 50 + (10 * (stats.meanUnitPrice - propertyUnitPrice)) / stats.stdUnitPrice;
+  const tScore = Math.round(Math.max(20, Math.min(80, raw)) * 10) / 10;
+  const below = stats.unitPrices.filter((u) => u < propertyUnitPrice).length;
+  const percentile = Math.round((below / stats.unitPrices.length) * 100);
+
+  let verdict: DeviationScore["verdict"];
+  if (tScore >= 60) verdict = "割安";
+  else if (tScore >= 55) verdict = "やや割安";
+  else if (tScore > 45) verdict = "相場並";
+  else if (tScore > 40) verdict = "やや割高";
+  else verdict = "割高";
+
+  const message =
+    `対象単価 ${Math.round(propertyUnitPrice).toLocaleString()}円/㎡ は周辺${stats.count}事例の` +
+    `平均 ${stats.meanUnitPrice.toLocaleString()}円/㎡ に対し偏差値${tScore}（下から${percentile}%）。${verdict}。`;
+
+  return { unitPrice: Math.round(propertyUnitPrice), basis, count: stats.count, tScore, percentile, verdict, message };
 }
 
 /** 取引事例を分類して統計化する。 */
