@@ -4,6 +4,7 @@ import {
   type CatalogItem,
   type PropertyStatus,
   STATUS_META,
+  summarizePortfolio,
 } from "@/lib/catalog";
 import { yen, pct } from "@/lib/format";
 
@@ -45,6 +46,8 @@ export function Catalog({
 
   return (
     <div className="space-y-4">
+      {items.length > 0 && <PortfolioPanel items={items} />}
+
       <div className="card p-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2 flex-wrap">
@@ -214,6 +217,56 @@ function Mini({ label, value }: { label: string; value: string }) {
     <div className="bg-base-900 rounded-md py-1">
       <div className="text-[10px] text-slate-500">{label}</div>
       <div className="tnum text-xs font-semibold text-slate-200">{value}</div>
+    </div>
+  );
+}
+
+// ===================== ポートフォリオ集計 =====================
+function PortfolioPanel({ items }: { items: CatalogItem[] }) {
+  const s = summarizePortfolio(items);
+  const dscrColor = !isFinite(s.portfolioDscr) || s.portfolioDscr >= 1.3 ? "#2dd4a7" : s.portfolioDscr >= 1.1 ? "#f5b14c" : "#f56c6c";
+  const ltvColor = s.overallLtvPct <= 70 ? "#2dd4a7" : s.overallLtvPct <= 90 ? "#f5b14c" : "#f56c6c";
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="card-title">📊 ポートフォリオ集計（{s.count}件）</h3>
+        {s.withFinancials < s.count && (
+          <span className="text-[10px] text-slate-500">財務集計は{s.withFinancials}件（保存し直すと反映）</span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <PMetric label="合計投資額(価格)" value={yen(s.totalPrice)} emphasize />
+        <PMetric label="合計借入" value={yen(s.totalLoan)} />
+        <PMetric label="合計自己資金" value={yen(s.totalSelfFunds)} />
+        <PMetric label="全体LTV" value={pct(s.overallLtvPct, 0)} color={ltvColor} />
+        <PMetric label="合計NOI(年)" value={yen(s.totalNoi)} color="#4f9cf9" />
+        <PMetric label="合計税引前CF(年)" value={yen(s.totalBtcf)} color={s.totalBtcf < 0 ? "#f56c6c" : "#2dd4a7"} />
+        <PMetric label="加重 表面利回り" value={pct(s.weightedGrossYieldPct)} />
+        <PMetric label="加重 実質利回り" value={pct(s.weightedNetYieldPct)} />
+        <PMetric label="ポートフォリオDSCR" value={isFinite(s.portfolioDscr) ? s.portfolioDscr.toFixed(2) : "—"} color={dscrColor} />
+        <PMetric label="平均スコア" value={s.avgScore.toFixed(0)} />
+        <PMetric label="平均 土地値比率" value={pct(s.avgLandValueRatio * 100, 0)} />
+        <PMetric label="購入済み" value={`${s.byStatus.owned}件`} color="#2dd4a7" />
+      </div>
+      {s.byKind.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-base-700">
+          <span className="text-[11px] text-slate-500 mr-1">種別構成:</span>
+          {s.byKind.map((k) => (
+            <span key={k.kind} className="text-[11px] bg-base-900 border border-base-600 rounded-full px-2.5 py-1 text-slate-300">
+              {k.kind} {k.count}件 · {yen(k.price)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PMetric({ label, value, color, emphasize }: { label: string; value: string; color?: string; emphasize?: boolean }) {
+  return (
+    <div>
+      <div className="text-[10px] text-slate-400 truncate">{label}</div>
+      <div className={`tnum font-bold ${emphasize ? "text-lg" : "text-base"}`} style={color ? { color } : undefined}>{value}</div>
     </div>
   );
 }

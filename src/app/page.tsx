@@ -81,6 +81,7 @@ const initialState: InputState = {
   taxRatePct: DEFAULT_TAX_RATE * 100,
   taxMode: "flat",
   otherIncome: 8_000_000,
+  equipmentRatioPct: 0,
   exitCapRatePct: DEFAULT_EXIT_CAP_RATE,
   years: DEFAULT_PROJECTION_YEARS,
 };
@@ -180,6 +181,7 @@ export default function Home() {
         taxRate,
         taxMode: state.taxMode,
         otherIncome: state.otherIncome,
+        equipmentRatio: state.equipmentRatioPct / 100,
         discountRate: DEFAULT_DISCOUNT_RATE,
         exitYear: state.years,
         exitCapRatePct: state.exitCapRatePct,
@@ -293,6 +295,14 @@ export default function Home() {
       grossYieldPct: snapProj.metrics.grossYieldPct,
       score: snapScore.total,
       grade: snapScore.grade,
+      price: np.price,
+      noi: snapProj.metrics.noi,
+      netYieldPct: snapProj.metrics.netYieldPct,
+      btcf: snapProj.rows[0]?.btcf ?? 0,
+      selfFunds: snapProj.metrics.selfFunds,
+      loanAmount: state.loan.amount,
+      annualDebtService: annualDebtService(state.loan),
+      dscr: snapProj.metrics.dscr,
     };
 
     const id = newId();
@@ -407,6 +417,14 @@ export default function Home() {
       grossYieldPct: proj.metrics.grossYieldPct,
       score: score.total,
       grade: score.grade,
+      price: state.property.price,
+      noi: proj.metrics.noi,
+      netYieldPct: proj.metrics.netYieldPct,
+      btcf: proj.rows[0]?.btcf ?? 0,
+      selfFunds: proj.metrics.selfFunds,
+      loanAmount: state.loan.amount,
+      annualDebtService: annualDebtService(state.loan),
+      dscr: proj.metrics.dscr,
     };
     const existing = currentItemId ? catalog.find((c) => c.id === currentItemId) : null;
     const id = existing?.id ?? newId();

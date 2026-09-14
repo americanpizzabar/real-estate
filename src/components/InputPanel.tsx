@@ -37,6 +37,7 @@ export interface InputState {
   taxRatePct: number;
   taxMode: "flat" | "individual";
   otherIncome: number; // 個人の他の課税所得（円）
+  equipmentRatioPct: number; // 設備分離償却の設備割合（%）。0で分離なし
   exitCapRatePct: number;
   years: number;
 }
@@ -232,7 +233,11 @@ export function InputPanel({
               ) : (
                 <NumberField label="他の課税所得" suffix="円" step={500_000} value={state.otherIncome} onChange={(v) => set({ otherIncome: v })} />
               )}
+              <NumberField label="設備分離償却" suffix="%設備" value={state.equipmentRatioPct} onChange={(v) => set({ equipmentRatioPct: v })} />
             </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              ※ 設備分離償却: 建物のうち設備(法定15年)の割合を指定すると前半の償却が厚くなり早期節税。0で分離なし（目安15〜25%）。
+            </p>
           </div>
         </div>
       </Section>

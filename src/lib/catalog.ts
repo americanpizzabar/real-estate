@@ -36,6 +36,15 @@ export interface CatalogSnapshot {
   grossYieldPct: number;
   score: number;
   grade: string;
+  // ポートフォリオ集計用の財務スナップショット（任意・後方互換）
+  price?: number;
+  noi?: number;
+  netYieldPct?: number;
+  btcf?: number; // 初年度税引前CF
+  selfFunds?: number;
+  loanAmount?: number;
+  annualDebtService?: number;
+  dscr?: number;
 }
 
 export interface CatalogItem {
@@ -47,6 +56,84 @@ export interface CatalogItem {
   tags: string[];
   sourceName?: string;
   snapshot?: CatalogSnapshot;
+}
+
+// =============================================================
+// ポートフォリオ集計（カタログ横断）
+// =============================================================
+export interface PortfolioSummary {
+  count: number;
+  totalPrice: number;
+  totalLoan: number;
+  totalSelfFunds: number;
+  totalNoi: number;
+  totalBtcf: number; // 初年度税引前CF合計
+  totalDebtService: number;
+  overallLtvPct: number; // 総借入 / 総価格
+  weightedGrossYieldPct: number; // 価格加重の表面利回り
+  weightedNetYieldPct: number; // 価格加重の実質利回り
+  portfolioDscr: number; // ΣNOI / Σ返済
+  avgScore: number;
+  avgLandValueRatio: number;
+  byStatus: Record<PropertyStatus, number>;
+  byKind: { kind: string; count: number; price: number }[];
+  /** 集計に財務データが揃っている件数（古いスナップショットは除外） */
+  withFinancials: number;
+}
+
+/** カタログからポートフォリオ指標を集計する。 */
+export function summarizePortfolio(items: CatalogItem[]): PortfolioSummary {
+  const byStatus: Record<PropertyStatus, number> = {
+    reviewing: 0, negotiating: 0, passed: 0, owned: 0,
+  };
+  const kindMap = new Map<string, { count: number; price: number }>();
+
+  let totalPrice = 0, totalLoan = 0, totalSelfFunds = 0, totalNoi = 0, totalBtcf = 0, totalDebtService = 0;
+  let wYieldNum = 0, wNetNum = 0, wPriceForYield = 0;
+  let scoreSum = 0, scoreCount = 0, lvrSum = 0, lvrCount = 0;
+  let withFinancials = 0;
+
+  for (const it of items) {
+    byStatus[it.status] = (byStatus[it.status] ?? 0) + 1;
+    const kind = it.property.propertyKind ?? "その他";
+    const km = kindMap.get(kind) ?? { count: 0, price: 0 };
+    km.count += 1;
+    km.price += it.property.price || 0;
+    kindMap.set(kind, km);
+
+    const s = it.snapshot;
+    if (s) {
+      if (s.score != null) { scoreSum += s.score; scoreCount++; }
+      if (s.landValueRatio != null) { lvrSum += s.landValueRatio; lvrCount++; }
+    }
+    // 財務集計は price+loan+noi が揃うものだけ
+    if (s && s.price != null && s.loanAmount != null && s.noi != null) {
+      withFinancials++;
+      totalPrice += s.price;
+      totalLoan += s.loanAmount;
+      totalSelfFunds += s.selfFunds ?? 0;
+      totalNoi += s.noi;
+      totalBtcf += s.btcf ?? 0;
+      totalDebtService += s.annualDebtService ?? 0;
+      wPriceForYield += s.price;
+      wYieldNum += (s.grossYieldPct ?? 0) * s.price;
+      wNetNum += (s.netYieldPct ?? 0) * s.price;
+    }
+  }
+
+  return {
+    count: items.length,
+    totalPrice, totalLoan, totalSelfFunds, totalNoi, totalBtcf, totalDebtService,
+    overallLtvPct: totalPrice > 0 ? (totalLoan / totalPrice) * 100 : 0,
+    weightedGrossYieldPct: wPriceForYield > 0 ? wYieldNum / wPriceForYield : 0,
+    weightedNetYieldPct: wPriceForYield > 0 ? wNetNum / wPriceForYield : 0,
+    portfolioDscr: totalDebtService > 0 ? totalNoi / totalDebtService : Infinity,
+    avgScore: scoreCount > 0 ? scoreSum / scoreCount : 0,
+    avgLandValueRatio: lvrCount > 0 ? lvrSum / lvrCount : 0,
+    byStatus,
+    byKind: [...kindMap.entries()].map(([kind, v]) => ({ kind, count: v.count, price: v.price })).sort((a, b) => b.price - a.price),
+    withFinancials,
+  };
 }
 
 const KEY = "fudosan_catalog_v1";

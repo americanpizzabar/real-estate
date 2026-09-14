@@ -37,6 +37,8 @@ export interface ProjectionInput {
   taxMode?: TaxMode;
   /** individual時の他の課税所得（給与等、円）。限界税率算出に使用。 */
   otherIncome?: number;
+  /** 設備分離償却: 建物のうち設備が占める割合（0〜0.4）。0で分離なし。 */
+  equipmentRatio?: number;
   /** 割引率（NPV用、0〜1） */
   discountRate: number;
   /** 出口（売却）想定: 売却年。null なら保有継続のみ。 */
@@ -48,19 +50,26 @@ export interface ProjectionInput {
 }
 
 /**
- * 中古建物の減価償却年数（簡便法）。
- * 法定耐用年数を超過: 法定×0.2、未超過: (法定-経過)+経過×0.2。
+ * 中古資産の減価償却年数（簡便法）。任意の法定耐用年数に適用可能。
+ * 法定を超過: 法定×0.2、未超過: (法定-経過)+経過×0.2。最低2年。
  */
-export function depreciationYears(structure: PropertyInput["structure"], age: number): number {
-  const legal = LEGAL_LIFESPAN[structure];
+export function usedAssetYears(legalLife: number, age: number): number {
   let years: number;
-  if (age >= legal) {
-    years = Math.floor(legal * 0.2);
+  if (age >= legalLife) {
+    years = Math.floor(legalLife * 0.2);
   } else {
-    years = Math.floor(legal - age + age * 0.2);
+    years = Math.floor(legalLife - age + age * 0.2);
   }
   return Math.max(2, years);
 }
+
+/** 中古建物（躯体）の減価償却年数（簡便法）。 */
+export function depreciationYears(structure: PropertyInput["structure"], age: number): number {
+  return usedAssetYears(LEGAL_LIFESPAN[structure], age);
+}
+
+/** 建物附属設備の法定耐用年数（定額法）。 */
+export const EQUIPMENT_LEGAL_YEARS = 15;
 
 /** 建物の償却対象額（建物割合 × 価格）。固評按分があればそれを優先。 */
 function buildingDepreciableBasis(p: PropertyInput): number {
@@ -95,11 +104,16 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
   const loanSchedule = buildLoanSchedule(loan);
   const selfFunds = input.downPayment + input.initialCostsTotal;
 
-  // 減価償却の準備
+  // 減価償却の準備（設備分離オプション: 建物を躯体と設備に分けて償却）
   const age = Math.max(0, input.currentYear - p.builtYear);
-  const depYears = depreciationYears(p.structure, age);
   const depBasis = buildingDepreciableBasis(p);
-  const annualDepreciation = Math.round(depBasis / depYears);
+  const equipRatio = Math.min(0.4, Math.max(0, input.equipmentRatio ?? 0));
+  const shellBasis = Math.round(depBasis * (1 - equipRatio));
+  const equipBasis = depBasis - shellBasis;
+  const shellYears = depreciationYears(p.structure, age); // 躯体
+  const equipYears = usedAssetYears(EQUIPMENT_LEGAL_YEARS, age); // 設備(法定15年)
+  const shellAnnual = shellYears > 0 ? Math.round(shellBasis / shellYears) : 0;
+  const equipAnnual = equipRatio > 0 && equipYears > 0 ? Math.round(equipBasis / equipYears) : 0;
 
   const rows: CashflowYearRow[] = [];
   let cumulativeBtcf = -selfFunds; // 表示用の税引前累積CF（起点=自己資金）
@@ -136,8 +150,9 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
     const debtService = ls ? ls.totalPaid : 0;
     const loanBalance = ls ? ls.balanceEnd : 0;
 
-    // --- 減価償却 ---
-    const depreciation = y <= depYears ? annualDepreciation : 0;
+    // --- 減価償却（躯体＋設備の合算。設備は前半に厚く＝早期の節税効果） ---
+    const depreciation =
+      (y <= shellYears ? shellAnnual : 0) + (equipRatio > 0 && y <= equipYears ? equipAnnual : 0);
     accumDepreciation += depreciation;
 
     // --- 税 ---
