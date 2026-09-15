@@ -136,6 +136,91 @@ export function summarizePortfolio(items: CatalogItem[]): PortfolioSummary {
   };
 }
 
+// =============================================================
+// ポートフォリオ最適化（集中リスク・分散・提案）
+// =============================================================
+export interface PortfolioOptimization {
+  hhiKind: number; // 種別の集中度(HHI, 0-1)
+  hhiArea: number; // エリア(市区町村)の集中度
+  diversificationScore: number; // 分散スコア(0-100, 高いほど分散)
+  topConcentration: { label: string; sharePct: number } | null; // 最大集中先
+  riskReturn: { name: string; returnPct: number; riskPct: number; price: number }[];
+  suggestions: string[];
+}
+
+/** 住所から市区町村レベルのエリアキーを抽出（都道府県＋市区郡＋町村/区）。 */
+function areaKey(address: string): string {
+  if (!address) return "不明";
+  const m = address.match(/(.+?[都道府県])?(.+?[市区郡])(.+?[区町村])?/);
+  if (m) return `${m[1] ?? ""}${m[2] ?? ""}${m[3] ?? ""}`.slice(0, 20) || address.slice(0, 12);
+  return address.slice(0, 12);
+}
+
+function hhi(shares: number[]): number {
+  const total = shares.reduce((a, b) => a + b, 0);
+  if (total <= 0) return 0;
+  return shares.reduce((a, s) => a + (s / total) ** 2, 0);
+}
+
+/** カタログのポートフォリオ最適化分析。 */
+export function optimizePortfolio(items: CatalogItem[]): PortfolioOptimization {
+  const kindMap = new Map<string, number>();
+  const areaMap = new Map<string, number>();
+  const riskReturn: PortfolioOptimization["riskReturn"] = [];
+
+  for (const it of items) {
+    const price = it.property.price || 0;
+    const kind = it.property.propertyKind ?? "その他";
+    kindMap.set(kind, (kindMap.get(kind) ?? 0) + price);
+    const ak = areaKey(it.property.address);
+    areaMap.set(ak, (areaMap.get(ak) ?? 0) + price);
+
+    const s = it.snapshot;
+    if (s && price > 0) {
+      // リターン=実質利回り、リスク=LTV(高いほどリスク)と土地値比率の逆数を合成
+      const ltv = s.loanAmount != null && s.price ? (s.loanAmount / s.price) * 100 : 60;
+      const landSafety = (s.landValueRatio ?? 0.5) * 100;
+      const risk = Math.max(0, Math.min(100, ltv * 0.7 + (100 - landSafety) * 0.3));
+      riskReturn.push({
+        name: it.property.name || "物件",
+        returnPct: s.netYieldPct ?? s.grossYieldPct ?? 0,
+        riskPct: Math.round(risk),
+        price,
+      });
+    }
+  }
+
+  const hhiKind = hhi([...kindMap.values()]);
+  const hhiArea = hhi([...areaMap.values()]);
+  // 分散スコア: 種別・エリアの集中度を平均し反転（件数1は低評価）
+  const base = 1 - (hhiKind + hhiArea) / 2;
+  const countFactor = Math.min(1, items.length / 5); // 5件以上で満点係数
+  const diversificationScore = Math.round(base * countFactor * 100);
+
+  // 最大集中先
+  const allShares = [
+    ...[...kindMap.entries()].map(([label, v]) => ({ label: `種別:${label}`, v })),
+    ...[...areaMap.entries()].map(([label, v]) => ({ label: `エリア:${label}`, v })),
+  ];
+  const totalPrice = items.reduce((a, it) => a + (it.property.price || 0), 0);
+  const top = allShares.sort((a, b) => b.v - a.v)[0];
+  const topConcentration = top && totalPrice > 0
+    ? { label: top.label, sharePct: Math.round((top.v / totalPrice) * 100) }
+    : null;
+
+  // 提案
+  const suggestions: string[] = [];
+  if (items.length < 3) suggestions.push("物件数が少なく分散が効いていません。異なるエリア・種別の追加で価格変動・空室リスクを平準化できます。");
+  if (hhiKind >= 0.5) suggestions.push(`種別が「${[...kindMap.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]}」に集中。用途分散（例: 区分＋一棟、賃貸＋民泊）でリスク低減を。`);
+  if (hhiArea >= 0.5) suggestions.push(`エリアが集中しています。災害・地域需要リスクの分散のため別商圏の物件検討を。`);
+  if (topConcentration && topConcentration.sharePct >= 50) suggestions.push(`${topConcentration.label}が全体の${topConcentration.sharePct}%を占め集中リスク大。1物件・1エリアへの依存を下げましょう。`);
+  const highRisk = riskReturn.filter((r) => r.riskPct >= 75);
+  if (highRisk.length) suggestions.push(`高リスク（高LTV/低土地値）物件が${highRisk.length}件。自己資金厚めの安全資産で全体のリスクを中和すると安定します。`);
+  if (suggestions.length === 0) suggestions.push("種別・エリアともに程よく分散しています。現在のリスク配分は良好です。");
+
+  return { hhiKind, hhiArea, diversificationScore, topConcentration, riskReturn, suggestions };
+}
+
 const KEY = "fudosan_catalog_v1";
 
 export function loadCatalog(): CatalogItem[] {

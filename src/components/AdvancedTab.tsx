@@ -9,11 +9,23 @@ import {
   type MonteCarloResult,
 } from "@/lib/calc/advanced";
 import type { ProjectionInput } from "@/lib/calc/projection";
-import type { IncomeMode } from "@/lib/calc/types";
-import { Card, Metric } from "./ui";
+import type { IncomeMode, LoanInput } from "@/lib/calc/types";
+import { compareLoanStrategies, type LoanEvents } from "@/lib/calc/loanStrategy";
+import { analyzeRealOptions, type RealOptionInput } from "@/lib/calc/realOptions";
+import { Card, Metric, NumberField, SelectField } from "./ui";
 import { pct, yen } from "@/lib/format";
 
-export function AdvancedTab({ projInput, mode }: { projInput: ProjectionInput; mode: IncomeMode }) {
+export function AdvancedTab({
+  projInput,
+  mode,
+  loan,
+  realOption,
+}: {
+  projInput: ProjectionInput;
+  mode: IncomeMode;
+  loan: LoanInput;
+  realOption: RealOptionInput;
+}) {
   const [mc, setMc] = React.useState<MonteCarloResult | null>(null);
   const [running, setRunning] = React.useState(false);
 
@@ -78,6 +90,130 @@ export function AdvancedTab({ projInput, mode }: { projInput: ProjectionInput; m
       <Card title="LTV / DSCR 年次推移（融資評価の時系列）">
         <LtvDscrView series={series} />
       </Card>
+
+      {/* 融資戦略（借換え・繰上返済・変動金利） */}
+      <Card title="融資戦略シミュレーション（借換え・繰上返済・変動金利）">
+        <LoanStrategyView loan={loan} />
+      </Card>
+
+      {/* リアルオプション（最有効使用） */}
+      <Card title="リアルオプション分析（最有効使用 HBU）">
+        <RealOptionView input={realOption} />
+      </Card>
+    </div>
+  );
+}
+
+// ===================== 融資戦略 (#8) =====================
+function LoanStrategyView({ loan }: { loan: LoanInput }) {
+  const [refiYear, setRefiYear] = React.useState(5);
+  const [refiRate, setRefiRate] = React.useState(Math.max(0.5, loan.annualRatePct - 1));
+  const [prepayYear, setPrepayYear] = React.useState(3);
+  const [prepayAmt, setPrepayAmt] = React.useState(5_000_000);
+  const [prepayMode, setPrepayMode] = React.useState<"shorten" | "reduce">("shorten");
+
+  const rows = React.useMemo(() => {
+    const scenarios: { key: string; label: string; events: LoanEvents }[] = [
+      {
+        key: "refi", label: `借換え(${refiYear}年目→${refiRate}%)`,
+        events: { refinance: { year: refiYear, ratePct: refiRate, years: Math.max(1, loan.years - refiYear), feePct: 2.2 } },
+      },
+      {
+        key: "prepay", label: `繰上${(prepayAmt / 10000).toLocaleString()}万(${prepayYear}年目・${prepayMode === "shorten" ? "期間短縮" : "額軽減"})`,
+        events: { prepayment: { year: prepayYear, amount: prepayAmt, mode: prepayMode } },
+      },
+      {
+        key: "riseup", label: "変動金利上昇(+1%@6年,+2%@11年)",
+        events: { ratePath: [{ year: 6, ratePct: loan.annualRatePct + 1 }, { year: 11, ratePct: loan.annualRatePct + 2 }] },
+      },
+    ];
+    return compareLoanStrategies(loan, scenarios);
+  }, [loan, refiYear, refiRate, prepayYear, prepayAmt, prepayMode]);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+        <NumberField label="借換え年" suffix="年目" value={refiYear} onChange={setRefiYear} />
+        <NumberField label="借換え金利" suffix="%" step={0.1} value={refiRate} onChange={setRefiRate} />
+        <NumberField label="繰上返済年" suffix="年目" value={prepayYear} onChange={setPrepayYear} />
+        <NumberField label="繰上金額" suffix="円" step={1_000_000} value={prepayAmt} onChange={setPrepayAmt} />
+        <SelectField<"shorten" | "reduce">
+          label="繰上方式"
+          value={prepayMode}
+          options={[{ value: "shorten", label: "期間短縮" }, { value: "reduce", label: "返済額軽減" }]}
+          onChange={setPrepayMode}
+        />
+      </div>
+      <table className="w-full text-sm tnum">
+        <thead>
+          <tr className="text-[11px] text-slate-400 border-b border-base-600">
+            <th className="text-left py-2 font-medium">施策</th>
+            <th className="text-right py-2 font-medium">総支払利息</th>
+            <th className="text-right py-2 font-medium">完済年</th>
+            <th className="text-right py-2 font-medium">手数料</th>
+            <th className="text-right py-2 font-medium">利息＋手数料 増減</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key} className="border-b border-base-700/50">
+              <td className="py-2 text-slate-200">{r.label}</td>
+              <td className="py-2 text-right text-slate-300">{yen(r.totalInterest)}</td>
+              <td className="py-2 text-right text-slate-300">{r.payoffYear ? `${r.payoffYear}年` : "—"}</td>
+              <td className="py-2 text-right text-slate-500">{r.refinanceFee ? yen(r.refinanceFee) : "—"}</td>
+              <td
+                className="py-2 text-right font-semibold"
+                style={{ color: r.key === "base" ? "#94a3b8" : r.savingVsBase < 0 ? "#2dd4a7" : "#f56c6c" }}
+              >
+                {r.key === "base" ? "基準" : `${r.savingVsBase < 0 ? "▼" : "▲"} ${yen(Math.abs(r.savingVsBase))}`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-[11px] text-slate-500">
+        ▼＝利息＋手数料の節約、▲＝増加。借換えは手数料2.2%込みで比較。繰上返済「期間短縮」は総利息を最も圧縮、「返済額軽減」は毎月の手残りを改善（総利息削減効果は小）。
+      </p>
+    </div>
+  );
+}
+
+// ===================== リアルオプション (#11) =====================
+function RealOptionView({ input }: { input: RealOptionInput }) {
+  const r = React.useMemo(() => analyzeRealOptions(input), [input]);
+  const maxVal = Math.max(...r.strategies.map((s) => Math.max(0, s.value)), 1);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <Metric label="最有効使用(HBU)" value={r.best.label} color="#2dd4a7" />
+        <Metric label="想定価値" value={yen(r.best.value)} emphasize color="#2dd4a7" />
+        <Metric
+          label="現況比プレミアム"
+          value={`${r.optionPremium >= 0 ? "+" : ""}${yen(r.optionPremium)}`}
+          color={r.optionPremium > 0 ? "#2dd4a7" : "#94a3b8"}
+          sub={`取得価格比 ${pct(r.hbuVsPricePct, 0)}`}
+        />
+      </div>
+      <div className="space-y-2">
+        {r.strategies.map((s) => (
+          <div key={s.key} className={`rounded-md border p-2.5 ${s.key === r.best.key ? "border-accent-green/50 bg-accent-green/5" : "border-base-600 bg-base-900"}`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-semibold text-slate-200">
+                {s.key === r.best.key ? "👑 " : ""}{s.label}
+                {!s.feasible && <span className="text-[10px] text-slate-500 ml-1">(不成立)</span>}
+              </span>
+              <span className="tnum text-sm font-bold" style={{ color: s.key === r.best.key ? "#2dd4a7" : "#cbd5e1" }}>{yen(s.value)}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-base-700 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, (s.value / maxVal) * 100))}%`, background: s.key === r.best.key ? "#2dd4a7" : "#4f9cf9" }} />
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">{s.detail}</div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-slate-500">
+        最有効使用（Highest & Best Use）＝現況継続/更地化売却/用途転換/建替えのうち価値最大の戦略。プレミアムが大きいほど「現況のまま以外に妙味」がある物件。建替えは容積率・想定賃料からの概算。
+      </p>
     </div>
   );
 }

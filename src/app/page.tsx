@@ -602,7 +602,25 @@ export default function Home() {
             )}
 
             {tab === "advanced" && (
-              <AdvancedTab projInput={buildProjFor(mode)} mode={mode} />
+              <AdvancedTab
+                projInput={buildProjFor(mode)}
+                mode={mode}
+                loan={state.loan}
+                realOption={{
+                  currentNoi: proj.metrics.noi,
+                  altNoi: mode === "rental" ? minpakuProj.metrics.noi : rentalProj.metrics.noi,
+                  altLabel: mode === "rental" ? "民泊運用" : "賃貸運用",
+                  capRatePct: state.exitCapRatePct,
+                  landMarketValue: cost.landMarketValue,
+                  buildingArea: state.property.buildingArea,
+                  landArea: state.property.landArea,
+                  structure: state.property.structure,
+                  floorAreaRatioPct: extras.floorAreaRatioPct ?? enrichment?.landUse?.floorAreaRatioPct ?? null,
+                  currentMonthlyRentPerSqm:
+                    state.property.buildingArea > 0 ? state.rental.monthlyGrossRent / state.property.buildingArea : null,
+                  price: state.property.price,
+                }}
+              />
             )}
           </main>
         </div>

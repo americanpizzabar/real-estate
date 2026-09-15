@@ -5,6 +5,7 @@ import {
   type PropertyStatus,
   STATUS_META,
   summarizePortfolio,
+  optimizePortfolio,
 } from "@/lib/catalog";
 import { yen, pct } from "@/lib/format";
 
@@ -47,6 +48,7 @@ export function Catalog({
   return (
     <div className="space-y-4">
       {items.length > 0 && <PortfolioPanel items={items} />}
+      {items.length >= 2 && <PortfolioOptimizationPanel items={items} />}
 
       <div className="card p-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -267,6 +269,81 @@ function PMetric({ label, value, color, emphasize }: { label: string; value: str
     <div>
       <div className="text-[10px] text-slate-400 truncate">{label}</div>
       <div className={`tnum font-bold ${emphasize ? "text-lg" : "text-base"}`} style={color ? { color } : undefined}>{value}</div>
+    </div>
+  );
+}
+
+// ===================== ポートフォリオ最適化 (#12) =====================
+function PortfolioOptimizationPanel({ items }: { items: CatalogItem[] }) {
+  const o = optimizePortfolio(items);
+  const divColor = o.diversificationScore >= 60 ? "#2dd4a7" : o.diversificationScore >= 35 ? "#f5b14c" : "#f56c6c";
+  const maxRet = Math.max(10, ...o.riskReturn.map((r) => r.returnPct));
+  const maxPrice = Math.max(1, ...o.riskReturn.map((r) => r.price));
+  return (
+    <div className="card p-4">
+      <h3 className="card-title mb-3">🧮 ポートフォリオ最適化（集中リスク・分散）</h3>
+      <div className="grid grid-cols-12 gap-4">
+        {/* 指標＋提案 */}
+        <div className="col-span-12 lg:col-span-5 space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <div className="text-[10px] text-slate-400">分散スコア</div>
+              <div className="tnum text-3xl font-bold" style={{ color: divColor }}>{o.diversificationScore}</div>
+              <div className="text-[10px] text-slate-500">100=よく分散</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400">種別集中(HHI)</div>
+              <div className="tnum text-lg font-semibold">{o.hhiKind.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400">エリア集中(HHI)</div>
+              <div className="tnum text-lg font-semibold">{o.hhiArea.toFixed(2)}</div>
+            </div>
+          </div>
+          {o.topConcentration && (
+            <div className="text-[11px] text-slate-400">
+              最大集中: <span className="text-slate-200">{o.topConcentration.label}</span>（{o.topConcentration.sharePct}%）
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <div className="text-[11px] text-slate-400">最適化の提案</div>
+            {o.suggestions.map((s, i) => (
+              <div key={i} className="text-[12px] text-slate-300 leading-relaxed flex gap-1.5">
+                <span className="text-accent">›</span><span>{s}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* リスク・リターン散布図（CSS） */}
+        <div className="col-span-12 lg:col-span-7">
+          <div className="text-[11px] text-slate-400 mb-1">リスク・リターン分布（横=リスク, 縦=実質利回り, 大きさ=価格）</div>
+          <div className="relative bg-base-900 border border-base-600 rounded-lg" style={{ height: 220 }}>
+            {/* グリッド軸ラベル */}
+            <span className="absolute left-1 top-1 text-[9px] text-slate-500">高利回り</span>
+            <span className="absolute left-1 bottom-1 text-[9px] text-slate-500">低利回り</span>
+            <span className="absolute right-1 bottom-1 text-[9px] text-slate-500">高リスク→</span>
+            <span className="absolute left-1 bottom-1 text-[9px] text-slate-500" style={{ transform: "translateX(0)" }}></span>
+            {o.riskReturn.map((r, i) => {
+              const size = 10 + Math.round((r.price / maxPrice) * 26);
+              const left = Math.max(2, Math.min(96, r.riskPct));
+              const bottom = Math.max(2, Math.min(94, (r.returnPct / maxRet) * 100));
+              return (
+                <div
+                  key={i}
+                  className="absolute rounded-full border border-white/40 flex items-center justify-center"
+                  style={{
+                    left: `${left}%`, bottom: `${bottom}%`, width: size, height: size,
+                    marginLeft: -size / 2, marginBottom: -size / 2,
+                    background: r.riskPct >= 75 ? "#f56c6c99" : r.returnPct >= 6 ? "#2dd4a799" : "#4f9cf999",
+                  }}
+                  title={`${r.name}: 利回り${r.returnPct.toFixed(1)}% / リスク${r.riskPct}`}
+                />
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">左上（低リスク・高利回り）が理想。右下（高リスク・低利回り）は要見直し。</p>
+        </div>
+      </div>
     </div>
   );
 }
