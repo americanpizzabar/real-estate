@@ -177,7 +177,12 @@ export interface CashflowYearRow {
   noi: number; // 純営業利益
   debtService: number; // 年間返済額
   btcf: number; // 税引前キャッシュフロー (NOI - 返済)
-  depreciation: number; // 減価償却費
+  depreciation: number; // 減価償却費（躯体＋設備）
+  shellDep: number; // うち躯体の償却
+  equipDep: number; // うち設備の償却
+  interest: number; // 支払利息
+  principal: number; // 元金返済
+  cumulativeAtcf: number; // 累積税引後CF（自己資金回収起点）
   taxableIncome: number; // 課税所得（NOI - 利息 - 償却）
   tax: number; // 税額（概算）
   atcf: number; // 税引後キャッシュフロー

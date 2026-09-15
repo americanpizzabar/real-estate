@@ -231,6 +231,134 @@ export function optimalExit(base: ProjectionInput): {
   return { points, bestYear, bestIrr: bestYear ? bestIrr : null };
 }
 
+// =============================================================
+// DCF精緻化 — 年次の税引後CFと割引現在価値・累積NPV
+// 設備分離償却(equipmentRatio)を含む減価償却内訳を反映。
+// =============================================================
+export interface DcfYearPoint {
+  year: number;
+  noi: number;
+  interest: number;
+  shellDep: number;
+  equipDep: number;
+  depreciation: number;
+  tax: number;
+  atcf: number;
+  discountFactor: number;
+  discountedAtcf: number; // 割引後CF
+  cumulativeNpv: number; // 累積NPV（0年=-自己資金）
+}
+
+export function dcfSeries(base: ProjectionInput): { rows: DcfYearPoint[]; selfFunds: number } {
+  const res = buildProjection(base);
+  const d = base.discountRate;
+  const selfFunds = base.downPayment + base.initialCostsTotal;
+  let cum = -selfFunds;
+  const rows = res.rows.map((r) => {
+    const factor = 1 / Math.pow(1 + d, r.year);
+    const discounted = Math.round(r.atcf * factor);
+    cum += discounted;
+    return {
+      year: r.year,
+      noi: r.noi,
+      interest: r.interest,
+      shellDep: r.shellDep,
+      equipDep: r.equipDep,
+      depreciation: r.depreciation,
+      tax: r.tax,
+      atcf: r.atcf,
+      discountFactor: factor,
+      discountedAtcf: discounted,
+      cumulativeNpv: Math.round(cum),
+    };
+  });
+  return { rows, selfFunds };
+}
+
+// =============================================================
+// 2次元感度ヒートマップ — 2ドライバー × IRR
+// =============================================================
+export interface HeatmapDriver {
+  key: string;
+  label: string;
+  unit: string;
+  values: number[];
+  apply: (i: ProjectionInput, v: number) => void;
+}
+
+/** ヒートマップ用ドライバー定義（軸に選べる項目）。 */
+export function heatmapDrivers(base: ProjectionInput): HeatmapDriver[] {
+  const list: HeatmapDriver[] = [];
+  const r = base.loan.annualRatePct;
+  list.push({
+    key: "rate", label: "金利", unit: "%",
+    values: [Math.max(0.3, r - 1), Math.max(0.5, r - 0.5), r, r + 0.5, r + 1, r + 1.5],
+    apply: (i, v) => { i.loan = { ...i.loan, annualRatePct: v }; },
+  });
+  const cap = base.exitCapRatePct ?? 7;
+  list.push({
+    key: "exitCap", label: "出口Cap", unit: "%",
+    values: [cap - 1, cap - 0.5, cap, cap + 0.5, cap + 1, cap + 1.5],
+    apply: (i, v) => { i.exitCapRatePct = v; },
+  });
+  if (base.mode === "rental" && base.rental) {
+    const vac = base.rental.vacancyRatePct;
+    list.push({
+      key: "vacancy", label: "空室率", unit: "%",
+      values: [Math.max(0, vac - 3), vac, vac + 3, vac + 6, vac + 9, vac + 12],
+      apply: (i, v) => { if (i.rental) i.rental = { ...i.rental, vacancyRatePct: v }; },
+    });
+    const rent = base.rental.monthlyGrossRent;
+    list.push({
+      key: "rent", label: "賃料", unit: "円",
+      values: [0.85, 0.92, 0.96, 1.0, 1.04, 1.08].map((m) => Math.round(rent * m)),
+      apply: (i, v) => { if (i.rental) i.rental = { ...i.rental, monthlyGrossRent: v }; },
+    });
+  } else if (base.mode === "minpaku" && base.minpaku) {
+    const occ = base.minpaku.occupancyPct;
+    list.push({
+      key: "occupancy", label: "稼働率", unit: "%",
+      values: [Math.max(30, occ - 20), Math.max(35, occ - 10), occ, Math.min(95, occ + 5), Math.min(95, occ + 10), Math.min(95, occ + 15)],
+      apply: (i, v) => { if (i.minpaku) i.minpaku = { ...i.minpaku, occupancyPct: v }; },
+    });
+    const adr = base.minpaku.adr;
+    list.push({
+      key: "adr", label: "ADR", unit: "円",
+      values: [0.75, 0.85, 0.95, 1.0, 1.1, 1.2].map((m) => Math.round(adr * m)),
+      apply: (i, v) => { if (i.minpaku) i.minpaku = { ...i.minpaku, adr: v }; },
+    });
+  }
+  return list;
+}
+
+export interface HeatCell {
+  x: number;
+  y: number;
+  irr: number | null;
+}
+
+/** 2ドライバーを総当たりでIRRを算出。metric='irr'|'dscr'|'btcf'。 */
+export function irrHeatmap(
+  base: ProjectionInput,
+  xDriver: HeatmapDriver,
+  yDriver: HeatmapDriver,
+  metric: "irr" | "dscr" | "btcf" = "irr"
+): HeatCell[][] {
+  return yDriver.values.map((yv) =>
+    xDriver.values.map((xv) => {
+      const inp = structuredClone(base);
+      xDriver.apply(inp, xv);
+      yDriver.apply(inp, yv);
+      const res = buildProjection(inp);
+      let val: number | null;
+      if (metric === "irr") val = res.metrics.irrPct;
+      else if (metric === "dscr") val = isFinite(res.metrics.dscr) ? res.metrics.dscr : null;
+      else val = res.rows[0]?.btcf ?? null;
+      return { x: xv, y: yv, irr: val };
+    })
+  );
+}
+
 export interface LtvDscrPoint {
   year: number;
   ltv: number; // % (loan balance / 推定市場価値)

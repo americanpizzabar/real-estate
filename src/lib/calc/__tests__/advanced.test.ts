@@ -10,6 +10,9 @@ import {
   runTornado,
   optimalExit,
   ltvDscrSeries,
+  dcfSeries,
+  heatmapDrivers,
+  irrHeatmap,
 } from "../advanced";
 import type { ProjectionInput } from "../projection";
 
@@ -88,5 +91,29 @@ describe("advanced（高度分析）", () => {
     const flat = runMonteCarlo({ ...base, taxMode: "flat" }, 100, 1);
     const indiv = runMonteCarlo({ ...base, taxMode: "individual", otherIncome: 8_000_000 }, 100, 1);
     expect(flat.percentiles.p50).not.toBe(indiv.percentiles.p50);
+  });
+
+  it("DCF: 割引後CFと累積NPV、設備分離で初年度償却が増える", () => {
+    const d0 = dcfSeries({ ...base, equipmentRatio: 0 });
+    const d25 = dcfSeries({ ...base, equipmentRatio: 0.25 });
+    expect(d0.rows.length).toBe(base.years);
+    // 割引率>0なら discountedAtcf < atcf（正のCF時）
+    const r = d0.rows.find((x) => x.atcf > 0)!;
+    expect(Math.abs(r.discountedAtcf)).toBeLessThanOrEqual(Math.abs(r.atcf));
+    // 設備分離で初年度償却(躯体+設備)が増える
+    expect(d25.rows[0].shellDep + d25.rows[0].equipDep).toBeGreaterThan(d0.rows[0].shellDep + d0.rows[0].equipDep);
+  });
+
+  it("2次元ヒートマップ: 全セルにIRR、金利上昇でIRR低下", () => {
+    const drivers = heatmapDrivers(base);
+    const rate = drivers.find((d) => d.key === "rate")!;
+    const cap = drivers.find((d) => d.key === "exitCap")!;
+    const m = irrHeatmap(base, rate, cap, "irr");
+    expect(m.length).toBe(cap.values.length);
+    expect(m[0].length).toBe(rate.values.length);
+    // 同じ出口Cap行で、金利が高い列ほどIRRは低い（rate.valuesは昇順）
+    const row = m[Math.floor(m.length / 2)];
+    const lowRate = row[0].irr, highRate = row[row.length - 1].irr;
+    if (lowRate != null && highRate != null) expect(highRate).toBeLessThanOrEqual(lowRate + 0.01);
   });
 });

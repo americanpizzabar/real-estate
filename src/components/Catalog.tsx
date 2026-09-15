@@ -279,9 +279,43 @@ function PortfolioOptimizationPanel({ items }: { items: CatalogItem[] }) {
   const divColor = o.diversificationScore >= 60 ? "#2dd4a7" : o.diversificationScore >= 35 ? "#f5b14c" : "#f56c6c";
   const maxRet = Math.max(10, ...o.riskReturn.map((r) => r.returnPct));
   const maxPrice = Math.max(1, ...o.riskReturn.map((r) => r.price));
+  const [advice, setAdvice] = React.useState<{ headline: string; advice: string; actions: string[]; source: string } | null>(null);
+  const [loadingAdvice, setLoadingAdvice] = React.useState(false);
+  const genAdvice = async () => {
+    setLoadingAdvice(true);
+    try {
+      const res = await fetch("/api/portfolio-advice", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ summary: summarizePortfolio(items), optimization: o }),
+      });
+      const d = await res.json();
+      if (res.ok) setAdvice(d);
+    } catch { /* noop */ } finally { setLoadingAdvice(false); }
+  };
   return (
     <div className="card p-4">
-      <h3 className="card-title mb-3">🧮 ポートフォリオ最適化（集中リスク・分散）</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="card-title">🧮 ポートフォリオ最適化（集中リスク・分散）</h3>
+        <button onClick={genAdvice} disabled={loadingAdvice} className="px-3 py-1 rounded-md text-xs font-bold bg-accent hover:bg-accent/90 text-white disabled:opacity-50 print:hidden">
+          {loadingAdvice ? "生成中…" : advice ? "AI提案 再生成" : "🤖 AI提案を生成"}
+        </button>
+      </div>
+      {advice && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 mb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-bold text-accent">{advice.headline}</span>
+            <span className="text-[10px] text-slate-500">{advice.source === "gemini" ? "AI生成" : "ルールベース"}</span>
+          </div>
+          <p className="text-sm text-slate-200 leading-relaxed">{advice.advice}</p>
+          {advice.actions.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {advice.actions.map((a, i) => (
+                <div key={i} className="text-[12px] text-slate-300 flex gap-1.5"><span className="text-accent-green">✓</span><span>{a}</span></div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-12 gap-4">
         {/* 指標＋提案 */}
         <div className="col-span-12 lg:col-span-5 space-y-3">

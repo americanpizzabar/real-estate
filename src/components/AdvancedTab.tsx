@@ -6,7 +6,8 @@ import {
 } from "recharts";
 import {
   runMonteCarlo, runTornado, optimalExit, ltvDscrSeries,
-  type MonteCarloResult,
+  dcfSeries, heatmapDrivers, irrHeatmap,
+  type MonteCarloResult, type HeatmapDriver,
 } from "@/lib/calc/advanced";
 import type { ProjectionInput } from "@/lib/calc/projection";
 import type { IncomeMode, LoanInput } from "@/lib/calc/types";
@@ -86,6 +87,16 @@ export function AdvancedTab({
         </Card>
       </div>
 
+      {/* DCF精緻化（減価償却内訳＋累積NPV） */}
+      <Card title="DCF精緻化（税引後CFの割引現在価値・減価償却内訳）">
+        <DcfView projInput={projInput} />
+      </Card>
+
+      {/* 2次元感度ヒートマップ */}
+      <Card title="2次元感度ヒートマップ（2ドライバー × IRR）">
+        <HeatmapView projInput={projInput} />
+      </Card>
+
       {/* LTV/DSCR推移 */}
       <Card title="LTV / DSCR 年次推移（融資評価の時系列）">
         <LtvDscrView series={series} />
@@ -100,6 +111,114 @@ export function AdvancedTab({
       <Card title="リアルオプション分析（最有効使用 HBU）">
         <RealOptionView input={realOption} />
       </Card>
+    </div>
+  );
+}
+
+// ===================== DCF精緻化 =====================
+function DcfView({ projInput }: { projInput: ProjectionInput }) {
+  const { rows } = React.useMemo(() => dcfSeries(projInput), [projInput]);
+  const equipOn = (projInput.equipmentRatio ?? 0) > 0;
+  const data = rows.map((r) => ({
+    year: `${r.year}`,
+    shell: Math.round(r.shellDep / 10000),
+    equip: Math.round(r.equipDep / 10000),
+    npv: Math.round(r.cumulativeNpv / 10000),
+    tax: Math.round(r.tax / 10000),
+  }));
+  const finalNpv = rows.length ? rows[rows.length - 1].cumulativeNpv : 0;
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Metric label="運用CFの累積NPV" value={yen(finalNpv)} sub="出口売却は除く" color={finalNpv < 0 ? "#f56c6c" : "#2dd4a7"} />
+        <Metric label="設備分離償却" value={equipOn ? `ON（${Math.round((projInput.equipmentRatio ?? 0) * 100)}%設備）` : "OFF"} sub="詳細設定で変更" color={equipOn ? "#4f9cf9" : undefined} />
+        <Metric label="初年度償却" value={yen(rows[0]?.shellDep + rows[0]?.equipDep || 0)} />
+        <Metric label="初年度税" value={yen(rows[0]?.tax ?? 0)} />
+      </div>
+      <ResponsiveContainer width="100%" height={280}>
+        <ComposedChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+          <CartesianGrid stroke="#1f2937" vertical={false} />
+          <XAxis dataKey="year" tick={{ fill: "#94a3b8", fontSize: 10 }} interval={1} />
+          <YAxis yAxisId="l" tick={{ fill: "#94a3b8", fontSize: 10 }} width={44} tickFormatter={(v) => `${v}万`} />
+          <YAxis yAxisId="r" orientation="right" tick={{ fill: "#94a3b8", fontSize: 10 }} width={46} tickFormatter={(v) => `${v}万`} />
+          <ReferenceLine yAxisId="r" y={0} stroke="#475569" />
+          <Tooltip contentStyle={{ background: "#111827", border: "1px solid #2e3a4f", borderRadius: 8, fontSize: 12 }} formatter={(v: number) => `${v}万円`} />
+          <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => v === "shell" ? "躯体償却" : v === "equip" ? "設備償却" : v === "npv" ? "累積NPV(右)" : "税額"} />
+          <Bar yAxisId="l" dataKey="shell" stackId="dep" fill="#4f9cf9" radius={[0, 0, 0, 0]} />
+          <Bar yAxisId="l" dataKey="equip" stackId="dep" fill="#f5b14c" radius={[2, 2, 0, 0]} />
+          <Line yAxisId="r" type="monotone" dataKey="npv" stroke="#2dd4a7" strokeWidth={2.5} dot={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+      <p className="text-[11px] text-slate-500">
+        棒=減価償却の内訳（躯体＝青／設備＝橙）。設備分離を上げると前半の償却が厚くなり早期の節税＝ATCF改善（累積NPVの立ち上がりが早くなる）。
+        「詳細設定 › 設備分離償却」を変えるとこのグラフが連動します。
+      </p>
+    </div>
+  );
+}
+
+// ===================== 2次元感度ヒートマップ =====================
+function HeatmapView({ projInput }: { projInput: ProjectionInput }) {
+  const drivers = React.useMemo(() => heatmapDrivers(projInput), [projInput]);
+  const [xKey, setXKey] = React.useState(drivers[2]?.key ?? "rate");
+  const [yKey, setYKey] = React.useState(drivers[0]?.key ?? "exitCap");
+  const xD = drivers.find((d) => d.key === xKey) ?? drivers[0];
+  const yD = drivers.find((d) => d.key === yKey) ?? drivers[1];
+  const matrix = React.useMemo(() => irrHeatmap(projInput, xD, yD, "irr"), [projInput, xD, yD]);
+
+  const color = (irr: number | null) => {
+    if (irr == null) return "#3a2020";
+    if (irr < 0) return "#7f1d1d";
+    if (irr < 2) return "#92732b";
+    if (irr < 4) return "#556b2f";
+    if (irr < 6) return "#1f6f54";
+    return "#15803d";
+  };
+  const fmtVal = (d: HeatmapDriver, v: number) => (d.unit === "円" ? `${Math.round(v / 10000)}万` : `${v}${d.unit}`);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3">
+        <div>
+          <span className="field-label">横軸(X)</span>
+          <select className="field-input" value={xKey} onChange={(e) => setXKey(e.target.value)}>
+            {drivers.map((d) => <option key={d.key} value={d.key} disabled={d.key === yKey}>{d.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <span className="field-label">縦軸(Y)</span>
+          <select className="field-input" value={yKey} onChange={(e) => setYKey(e.target.value)}>
+            {drivers.map((d) => <option key={d.key} value={d.key} disabled={d.key === xKey}>{d.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="border-collapse text-[11px] tnum">
+          <thead>
+            <tr>
+              <th className="p-1.5 text-slate-400 font-medium text-right">{yD.label}＼{xD.label}</th>
+              {xD.values.map((xv, i) => (
+                <th key={i} className="p-1.5 text-slate-400 font-medium text-center min-w-[54px]">{fmtVal(xD, xv)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.map((row, i) => (
+              <tr key={i}>
+                <td className="p-1.5 text-slate-300 font-medium text-right whitespace-nowrap">{fmtVal(yD, yD.values[i])}</td>
+                {row.map((cell, j) => (
+                  <td key={j} className="p-1.5 text-center text-white/90 rounded-sm" style={{ background: color(cell.irr) }} title={`IRR ${cell.irr?.toFixed(1) ?? "—"}%`}>
+                    {cell.irr != null ? `${cell.irr.toFixed(1)}%` : "—"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        セル＝そのX×Y条件でのIRR。緑=高IRR、赤=マイナス。2つのリスク要因が同時に悪化した時の耐性が一目で分かる。軸は上のセレクタで変更可。
+      </p>
     </div>
   );
 }

@@ -41,6 +41,7 @@ import { Catalog } from "@/components/Catalog";
 import { ReportDocument, type ReportData } from "@/components/ReportDocument";
 import { AdvancedTab } from "@/components/AdvancedTab";
 import { AssessPanel } from "@/components/AssessPanel";
+import { DiagnosticsPanel } from "@/components/DiagnosticsPanel";
 import type { AssessInput } from "@/lib/assess";
 import type { ExtractedFields } from "@/lib/external/extraction";
 import type { Enrichment } from "@/lib/external/enrichment";
@@ -625,9 +626,12 @@ export default function Home() {
           </main>
         </div>
       )}
-      <footer className="max-w-[1600px] mx-auto px-4 py-6 text-[11px] text-slate-600 print:hidden">
-        ※ 本ツールの算出値は簡易シミュレーションです。実際の投資判断・融資審査は専門家にご確認ください。
-        外部API（不動産情報ライブラリ）未設定時はデモデータで動作します。
+      <footer className="max-w-[1600px] mx-auto px-4 py-6 text-[11px] text-slate-600 print:hidden space-y-2">
+        <p>
+          ※ 本ツールの算出値は簡易シミュレーションです。実際の投資判断・融資審査は専門家にご確認ください。
+          外部API（不動産情報ライブラリ）未設定時はデモデータで動作します。
+        </p>
+        <DiagnosticsPanel />
       </footer>
       </div>
     </div>

@@ -151,8 +151,9 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
     const loanBalance = ls ? ls.balanceEnd : 0;
 
     // --- 減価償却（躯体＋設備の合算。設備は前半に厚く＝早期の節税効果） ---
-    const depreciation =
-      (y <= shellYears ? shellAnnual : 0) + (equipRatio > 0 && y <= equipYears ? equipAnnual : 0);
+    const shellDep = y <= shellYears ? shellAnnual : 0;
+    const equipDep = equipRatio > 0 && y <= equipYears ? equipAnnual : 0;
+    const depreciation = shellDep + equipDep;
     accumDepreciation += depreciation;
 
     // --- 税 ---
@@ -186,10 +187,15 @@ export function buildProjection(input: ProjectionInput): ProjectionResult {
       debtService,
       btcf,
       depreciation,
+      shellDep,
+      equipDep,
+      interest,
+      principal,
       taxableIncome,
       tax,
       atcf,
       cumulativeBtcf,
+      cumulativeAtcf,
       loanBalance,
       isDeadCross,
     });
